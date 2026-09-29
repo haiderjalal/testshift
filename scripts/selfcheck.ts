@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
+import { agentWindows } from "@/lib/agents";
 import type { TestCase } from "@/lib/db";
+import { tokenCost } from "@/lib/plans";
 import { isPublicHost } from "@/lib/net";
 import { buildSpec } from "@/lib/spec";
 
@@ -15,6 +17,7 @@ async function main(): Promise<void> {
 
   const failing = {
     seq: 3,
+    agent: "uat",
     title: 'Adds a "todo"',
     viewport: "mobile",
     expected: "Item appears",
@@ -29,7 +32,18 @@ async function main(): Promise<void> {
     ],
   } as TestCase;
   const spec = buildSpec("https://demo.playwright.dev/todomvc/", [failing, { ...failing, seq: 4, status: "pending" }]);
+  assert.match(spec, /test\.describe\("End-to-end tests · UAT agent"/, "tests are grouped by agent");
   assert.match(spec, /test\.describe\("mobile"/);
+  assert.doesNotMatch(spec, /Unit tests/, "agents with no executed tests are left out");
+
+  // Token cost: 1M input + 1M output on Opus 5.5 is $4 + $20.
+  assert.equal(tokenCost("claude-opus-5-5", { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0 }), 24);
+  // Agent windows cover the whole shift, in order, without gaps.
+  const windows = agentWindows(0, 1000);
+  assert.deepEqual(windows.map((w) => w.agent.id), ["dev", "staging", "uat", "prod"]);
+  assert.equal(windows[0].from, 0);
+  assert.ok(Math.abs(windows[3].to - 1000) < 1e-9);
+  windows.slice(1).forEach((w, i) => assert.equal(w.from, windows[i].to));
   assert.match(spec, /test\("#3 Adds a \\"todo\\""/);
   assert.match(spec, /\.fill\("Buy milk"\)/);
   assert.match(spec, /BUG \(major\): Nothing happens/);

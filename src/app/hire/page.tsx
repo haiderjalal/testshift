@@ -20,9 +20,9 @@ export default async function HirePage({ searchParams }: PageProps<"/hire">) {
 
   return (
     <>
-      <SiteHeader showNav={false} />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pt-6 pb-24 sm:px-8">
-        <h1 className="text-4xl font-semibold tracking-tight">Book a QA shift</h1>
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pt-10 pb-24 sm:px-8">
+        <h1 className="font-display text-4xl font-semibold tracking-[-0.03em]">Book a QA shift</h1>
         <p className="mt-3 text-graphite">
           Your first {TRIAL_MINUTES} minutes are free. The tester starts right away and works until the shift ends.
         </p>

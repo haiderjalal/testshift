@@ -23,16 +23,21 @@ Rent an AI QA engineer by the hour. Paste a link, book hours, and get a bug repo
 
 ## Pricing
 
-| Plan | Rate | What changes |
-|---|---|---|
-| Junior QA | $30/h | Core journeys and functional/E2E tests. Model effort `low`. |
-| Senior QA | $50/h | Adds edge cases, negative inputs, mobile, and accessibility. Model effort `high`. |
+Every plan runs all four agents: Dev (unit tests), Staging (integration), UAT (end-to-end) and Prod (smoke and release checks).
 
-**Free trial:** every customer's first shift is 20 minutes, free, with no card needed. It is limited to one per email address and one per website (`www.` ignored), and the limit is enforced by unique indexes in the database. The trial report ends with a "Book more hours" prompt that pre-fills the form. The length is `TRIAL_MINUTES` in `src/lib/plans.ts`. Expected model cost is roughly $2–5 per trial, which is the customer acquisition cost.
+| Plan | Rate | Model | Adds |
+|---|---|---|---|
+| Junior QA | $30/h | Claude Sonnet 5.5, low effort | Core flows, desktop |
+| Senior QA | $50/h | Claude Opus 5.5, medium effort | Mobile, edge cases and bad inputs |
+| Lead QA | $100/h | Claude Opus 5.5, high effort | Accessibility and performance audits |
+| Principal QA | $150/h | Claude Fable 5.1 | Security-header review, priority queue |
+| Custom | Quote | — | Request form; requests show in the admin dashboard |
 
-Both plans use Claude Opus 5.5 ($4 input / $20 output per million tokens; cache reads $0.20).
-**Rough model cost** is about $0.10–$0.75 per test case, depending on how many steps it takes. With prompt caching on, that works out to an estimated **$5–15 per shift-hour**, leaving healthy margin at $30/$50.
-Measure real cost per hour on the first 20 shifts (log `response.usage`) before changing prices.
+**Free trial:** every customer's first shift is 20 minutes, free, with no card needed. It is limited to one per email address and one per website (`www.` ignored), enforced by unique indexes in the database. The trial report ends with a "Book more hours" prompt that pre-fills the form.
+
+**Cost tracking:** every Claude call's tokens and cost are logged to `ai_usage`. The owner-only `/admin` dashboard shows usage by model, agent and day, revenue against cost, and a calculator based on real averages. Starting estimates are roughly $4, $9, $14 and $28 per shift-hour for the four plans. Measure real costs on the first shifts before changing prices.
+
+Full, current detail lives in [PRODUCT_CONTEXT.md](PRODUCT_CONTEXT.md).
 
 ## How the AI tester works (worker)
 

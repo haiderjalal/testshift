@@ -2,7 +2,9 @@
 
 import { startTransition, useActionState, useState, type FormEvent } from "react";
 
-import { HOUR_OPTIONS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
+import Link from "next/link";
+
+import { HOUR_OPTIONS, MODELS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
 
 import { bookShift, type BookingState } from "./actions";
 
@@ -84,9 +86,16 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
                 <span className="font-mono text-sm">${p.rate}/h</span>
               </span>
               <span className="mt-1 block text-sm text-graphite">{p.pitch}</span>
+              <span className="mt-2 block font-mono text-[11px] text-dev">{MODELS[p.model].label}</span>
             </label>
           ))}
         </div>
+        <p className="mt-3 text-sm text-graphite">
+          Every plan runs all four agents: Dev, Staging, UAT and Prod.{" "}
+          <Link href="/custom" className="text-ink underline underline-offset-4 hover:text-dev">
+            Need custom pricing?
+          </Link>
+        </p>
       </fieldset>
 
       <fieldset>
@@ -179,10 +188,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
             {state.message}
           </p>
         )}
-        <button
-          disabled={pending}
-          className="h-13 w-full rounded-full bg-ink px-6 text-lg font-medium text-paper hover:bg-ink/85 disabled:opacity-60"
-        >
+        <button disabled={pending} className="btn-primary h-13 w-full text-lg disabled:opacity-60">
           {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : plan ? `Book ${shift}-hour shift · $${total}` : `Book ${shift}-hour shift`}
         </button>
         <p className="mt-3 text-center text-sm text-graphite">

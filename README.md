@@ -1,8 +1,10 @@
 # TestShift
 
-Rent an AI QA engineer by the hour. Customers paste a URL and book 1–8 hours. An AI tester (Claude + Playwright) writes test cases, runs them in a real browser for the whole shift, and delivers a bug report plus a runnable Playwright suite.
+Rent four AI QA agents by the hour. Customers paste a URL and book a free 20-minute trial or 1–8 hours. Dev, Staging, UAT and Prod agents (one Claude + Playwright tester working in four phases) run unit, integration, end-to-end and smoke tests in a real browser and deliver a bug report plus a runnable Playwright suite.
 
-Product plan and architecture: [docs/PLAN.md](docs/PLAN.md).
+Full product context: [docs/PRODUCT_CONTEXT.md](docs/PRODUCT_CONTEXT.md). Plan and roadmap: [docs/PLAN.md](docs/PLAN.md).
+
+Owner dashboard: set `ADMIN_PASSWORD` in `.env.local`, then open `/admin` to track Claude token usage, cost and margin.
 
 ## Stack
 

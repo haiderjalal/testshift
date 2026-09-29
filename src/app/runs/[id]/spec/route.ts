@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/runs/[id
   if (!run) return new Response("Report not found.", { status: 404 });
 
   const cases = await db()<TestCase[]>`
-    select seq, title, viewport, expected, status, actual, severity, actions
+    select seq, agent, title, viewport, expected, status, actual, severity, actions
     from test_cases where run_id = ${id} order by seq`;
   const host = new URL(run.url).hostname.replace(/[^a-z0-9.-]/gi, "");
 

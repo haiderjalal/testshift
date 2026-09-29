@@ -1,3 +1,5 @@
+import { agentById, type AgentId } from "@/lib/agents";
+
 export type LogStatus = "pass" | "fail" | "blocked" | "info" | "running";
 
 export interface LogEntry {
@@ -6,6 +8,7 @@ export interface LogEntry {
   status: LogStatus;
   text: string;
   tag?: string;
+  agent?: AgentId;
 }
 
 const MARKS: Record<LogStatus, { glyph: string; label: string; className: string }> = {
@@ -16,24 +19,28 @@ const MARKS: Record<LogStatus, { glyph: string; label: string; className: string
   running: { glyph: "…", label: "In progress", className: "text-ink animate-pulse" },
 };
 
-/** The running record of a shift: one line per test, failures highlighted like a marked-up test plan. */
-export function ShiftLog({ entries, animate = false }: { entries: LogEntry[]; animate?: boolean }) {
+/** The running record of a shift: one line per test, tagged with its agent, failures highlighted. */
+export function ShiftLog({ entries }: { entries: LogEntry[] }) {
   return (
     <ol className="divide-y divide-rule/70 font-mono text-[13px] leading-5">
       {entries.map((e) => {
         const mark = MARKS[e.status];
+        const agent = e.agent ? agentById(e.agent) : null;
         return (
-          <li key={e.id} className={`flex gap-3 py-2 ${animate ? "log-in" : ""}`}>
-            <span className="w-[4.5rem] shrink-0 tabular-nums text-graphite">{e.time}</span>
+          <li key={e.id} className="flex gap-3 py-2.5">
+            <span className="w-[4.5rem] shrink-0 text-graphite tabular-nums">{e.time}</span>
+            {agent && (
+              <span className="w-14 shrink-0 text-[10px] leading-5 font-semibold tracking-widest uppercase" style={{ color: agent.color }}>
+                {agent.id}
+              </span>
+            )}
             <span className={`w-3 shrink-0 font-semibold ${mark.className}`}>
               <span aria-hidden>{mark.glyph}</span>
               <span className="sr-only">{mark.label}:</span>
             </span>
             <span className="min-w-0 flex-1">
               <span className={e.status === "fail" ? "marker" : ""}>{e.text}</span>
-              {e.tag && (
-                <span className="ml-2 text-[11px] font-semibold uppercase tracking-wider text-fail">{e.tag}</span>
-              )}
+              {e.tag && <span className="ml-2 text-[11px] font-semibold tracking-wider text-fail uppercase">{e.tag}</span>}
             </span>
           </li>
         );
