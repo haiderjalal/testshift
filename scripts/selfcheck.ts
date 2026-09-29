@@ -28,6 +28,9 @@ async function main(): Promise<void> {
       { action: "goto", value: "https://demo.playwright.dev/todomvc/" },
       { action: "fill", selector: 'role=textbox[name="What needs to be done?"]', value: "Buy milk" },
       { action: "press", selector: 'role=textbox[name="What needs to be done?"]', value: "Enter" },
+      { action: "dblclick", selector: "text=Buy milk" },
+      { action: "reload" },
+      { action: "back" },
       { action: "expect_text", value: "Buy milk" },
     ],
   } as TestCase;
@@ -46,6 +49,9 @@ async function main(): Promise<void> {
   windows.slice(1).forEach((w, i) => assert.equal(w.from, windows[i].to));
   assert.match(spec, /test\("#3 Adds a \\"todo\\""/);
   assert.match(spec, /\.fill\("Buy milk"\)/);
+  assert.match(spec, /\.dblclick\(\);/);
+  assert.match(spec, /page\.reload\(\);/);
+  assert.match(spec, /page\.goBack\(\);/);
   assert.match(spec, /BUG \(major\): Nothing happens/);
   assert.doesNotMatch(spec, /#4/, "tests that never ran are not exported");
 

@@ -85,6 +85,15 @@ export async function perform(page: Page, { action, selector, value = "" }: Brow
     case "click":
       await target().click();
       break;
+    case "dblclick":
+      await target().dblclick();
+      break;
+    case "back":
+      await page.goBack();
+      break;
+    case "reload":
+      await page.reload();
+      break;
     case "fill":
       await target().fill(value);
       break;

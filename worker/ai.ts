@@ -149,7 +149,8 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "browser",
     description: `Control the browser. Every call returns the resulting page state.
-- goto(value=url) · click(selector) · fill(selector, value) · press(value=key, selector optional) · select(selector, value) · hover(selector)
+- goto(value=url) · click(selector) · dblclick(selector) · fill(selector, value) · press(value=key, selector optional) · select(selector, value) · hover(selector)
+- back: browser Back button · reload: reload the page
 - expect_visible(selector) · expect_text(value=text, selector optional) · expect_url(value=substring): assertions, fail if not true within 5s
 - snapshot: re-read the current page without acting`,
     input_schema: {

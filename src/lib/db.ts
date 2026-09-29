@@ -71,10 +71,13 @@ export interface Run {
 export const BROWSER_ACTIONS = [
   "goto",
   "click",
+  "dblclick",
   "fill",
   "press",
   "select",
   "hover",
+  "back",
+  "reload",
   "expect_visible",
   "expect_text",
   "expect_url",

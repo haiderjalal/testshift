@@ -11,6 +11,12 @@ function toCode({ action, selector, value }: BrowserAction): string {
       return `await page.goto(${str(value)});`;
     case "click":
       return `await ${loc}.click();`;
+    case "dblclick":
+      return `await ${loc}.dblclick();`;
+    case "back":
+      return "await page.goBack();";
+    case "reload":
+      return "await page.reload();";
     case "fill":
       return `await ${loc}.fill(${str(value)});`;
     case "press":
