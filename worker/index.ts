@@ -2,6 +2,7 @@ import { chromium, type Browser } from "playwright";
 
 import { agentWindows, type Agent, type AgentId } from "@/lib/agents";
 import { db, json, type Run, type Severity, type SitePage, type TestCase } from "@/lib/db";
+import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { PLANS } from "@/lib/plans";
 
@@ -309,29 +310,13 @@ async function processRun(run: Run): Promise<void> {
 }
 
 async function emailReport(run: Run): Promise<void> {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !process.env.EMAIL_FROM) {
-    log("warn", "Email not configured; skipping report email", { runId: run.id });
-    return;
-  }
   const link = `${process.env.APP_URL ?? "http://localhost:3000"}/runs/${run.id}`;
   const host = new URL(run.url).hostname;
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
-        to: run.email,
-        subject: `Your QA report for ${host} is ready`,
-        text: `Your TestShift QA shift on ${host} has finished.\n\nRead the report and download the test suite:\n${link}`,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) log("error", "Report email failed", { runId: run.id, status: res.status });
-  } catch (e) {
-    log("error", "Report email failed", { runId: run.id, error: errorMessage(e) });
-  }
+  await sendEmail({
+    to: run.email,
+    subject: `Your QA report for ${host} is ready`,
+    text: `Your TestShift QA shift on ${host} has finished.\n\nRead the report and download the test suite:\n${link}`,
+  });
 }
 
 async function main(): Promise<void> {
