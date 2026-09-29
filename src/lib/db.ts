@@ -1,5 +1,6 @@
 import postgres from "postgres";
 
+import type { AgentId } from "./agents";
 import type { PlanId } from "./plans";
 
 const cache = globalThis as typeof globalThis & { sql?: postgres.Sql };
@@ -43,6 +44,8 @@ export interface RunReport {
   summary: string;
   strengths: string[];
   recommendations: string[];
+  /** One-line verdict per agent. Missing on reports written before the four-agent pipeline. */
+  agentNotes?: Partial<Record<AgentId, string>>;
 }
 
 export interface Run {
@@ -55,6 +58,7 @@ export interface Run {
   notes: string;
   status: RunStatus;
   activity: string | null;
+  agent: AgentId | null;
   site_map: SitePage[] | null;
   report: RunReport | null;
   error: string | null;
@@ -82,7 +86,16 @@ export interface BrowserAction {
   value?: string;
 }
 
-export const CATEGORIES = ["smoke", "functional", "e2e", "negative", "ui", "accessibility", "performance"] as const;
+export const CATEGORIES = [
+  "smoke",
+  "functional",
+  "e2e",
+  "negative",
+  "ui",
+  "accessibility",
+  "performance",
+  "security",
+] as const;
 
 export type CaseStatus = "pending" | "running" | "passed" | "failed" | "blocked";
 export type Severity = "critical" | "major" | "minor";
@@ -90,6 +103,7 @@ export type Severity = "critical" | "major" | "minor";
 export interface TestCase {
   id: string;
   seq: number;
+  agent: AgentId;
   title: string;
   category: (typeof CATEGORIES)[number];
   priority: "high" | "medium" | "low";

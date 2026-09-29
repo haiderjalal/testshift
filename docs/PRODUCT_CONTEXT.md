@@ -1,0 +1,331 @@
+# TestShift: full product context
+
+A single reference for anyone joining the project, human or AI assistant. It covers what the product is, how it works end to end, where the code lives, what is done, and what is still open.
+
+Last updated: 2026-09-30.
+
+---
+
+## 1. The product
+
+**TestShift** is a working name, meaning "book a QA shift". The repository folder is `rentaqa`, and the name lives in one constant, `SITE.name` in `src/lib/plans.ts`.
+
+**One line:** rent a team of four AI QA agents by the hour. The Dev, Staging, UAT and Prod agents run unit, integration, end-to-end and smoke tests on a website in a real browser, then deliver a bug report and a runnable Playwright suite.
+
+**Who it's for**
+- Founders and small teams shipping without a dedicated QA person.
+- Agencies that need a test pass before handing a site to a client.
+- Dev teams that want a second pair of eyes before a release.
+
+**The four agents** (`src/lib/agents.ts`). In the backend they are one AI tester working the shift in four phases, run in this order:
+
+| Agent | Environment | Test type | Share of shift | What it checks |
+|---|---|---|---|---|
+| Dev | Development | Unit tests | 30% | One unit at a time: a field's validation, a button, a link, a component's state |
+| Staging | Staging | Integration tests | 25% | Parts working together: forms reach their confirmation, search feeds results, state survives reloads |
+| UAT | User acceptance | End-to-end tests | 30% | Complete customer journeys with acceptance criteria; automated accessibility audit on Lead and up |
+| Prod | Production | Smoke tests | 15% | Every page loads fast and error-free, critical paths work; go / no-go verdict |
+
+The "unit tests" are **unit-level UI tests** done through the browser, because the tester only has a URL. Real unit tests against source code need a GitHub connection (roadmap). This is stated on the site's FAQ.
+
+**What the customer gets at the end of a shift**
+- A quality score (0–100) and a release verdict: No-go (any critical bug), Go with caution (any major), or Go.
+- A one-line verdict from each agent.
+- Bugs ranked by severity, each tagged with its agent and test type, with steps, expected versus actual, and a screenshot.
+- What works well, a fix-first list, and every test case grouped by agent.
+- A Playwright `.spec.ts` with one `test.describe` block per agent (mobile tests nested inside).
+
+**Not supported yet:** pages behind a login, unit tests against source code, entering payment details.
+
+---
+
+## 2. Pricing, models and business rules
+
+Every plan runs all four agents (`src/lib/plans.ts`).
+
+| Plan | Rate | Claude model | Effort | Adds |
+|---|---|---|---|---|
+| Junior QA | $30/h | Sonnet 5.5 | low | Core flows, desktop only |
+| Senior QA | $50/h | Opus 5.5 | medium | Mobile viewport, edge cases and bad inputs |
+| Lead QA | $100/h | Opus 5.5 | high | Accessibility audit (axe-core, WCAG 2 A/AA), performance audit (LCP and CLS) |
+| Principal QA | $150/h | Fable 5.1 | medium | Security-header review, priority queue (claimed first) |
+| Custom | Quote | — | — | Request form at `/custom`; requests appear in `/admin` |
+
+- **Paid shifts:** 1, 2, 3, 4, 6 or 8 hours. Price = rate × hours, paid up front through Stripe Checkout.
+- **Free trial:** one free 20-minute shift (`TRIAL_MINUTES`) per email address and per website.
+  - Email matching ignores case, and website matching ignores `www.`.
+  - Unique indexes in the database enforce this, so it holds even for parallel sign-ups.
+  - It works on any plan and needs no card.
+  - The trial report ends with "Book more hours".
+- **Booking form:** the free trial is selected by default. No plan is selected unless the link includes `?plan=`. Customers must confirm they own the site or may test it.
+- **Model prices** in USD per million tokens (input / output / cache read / cache write):
+  - Sonnet 5.5: 2 / 10 / 0.20 / 2.50
+  - Opus 5.5: 4 / 20 / 0.20 / 5
+  - Fable 5.1: 10 / 50 / 0.25 / 12.50
+- **Starting cost estimates** (used by the token calculator until real shifts exist): about $4, $9, $14 and $28 per shift-hour for Junior, Senior, Lead and Principal. Real averages replace them per plan as shifts complete.
+- **Not built yet:** refunds for failed or early-ending shifts, and email verification.
+
+---
+
+## 3. Pages
+
+| Route | What it is |
+|---|---|
+| `/` | Landing page, fully animated (see §10). Prerendered static HTML. |
+| `/hire` | Booking form: URL, plan (four cards with model badges), shift length ("20 min free" or 1–8h), email, notes, permission. Accepts `?url=`, `?plan=` and `?hours=`. |
+| `/custom` | Custom pricing quote request (name, email, company, website, needs), with a honeypot field for bots. |
+| `/runs/[id]` | Private shift page (UUID link, `noindex`). While running: clock, progress bar, four-agent pipeline with the agent on duty, a live log tagged by agent, refreshing every 5s. When done: the full report. |
+| `/runs/[id]/spec` | Playwright suite download, for completed shifts only. |
+| `/runs/[id]/shots/[caseId]` | Screenshot of a failed test. |
+| `/admin` | Owner-only dashboard: Claude token usage, cost, revenue, margin, token calculator, shifts, quote requests. |
+| `/admin/login` | Password sign-in (`ADMIN_PASSWORD`). |
+| `/api/stripe/webhook` | Stripe `checkout.session.completed` marks the shift paid. |
+
+There are no customer accounts. The UUID link acts as a private link, and the email contains it.
+
+---
+
+## 4. How it works in the backend
+
+```
+Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
+               │    │                              ▲
+               │    └─ Stripe Checkout + webhook   │ claims runs (FOR UPDATE SKIP LOCKED, Principal first)
+               │                                   │
+               │                         Worker (Node + Playwright, long-running container)
+               │                                   │
+               └── shift page / report ◀───────────┼─▶ Claude API: plan · execute · report (usage logged per call)
+                                                   └─▶ Resend (report-ready email)
+```
+
+### Step by step, from submitting a link
+1. **Booking** (`src/app/hire/actions.ts`).
+   - Zod validates every field, and the SSRF guard rejects private or internal addresses (`src/lib/net.ts`).
+   - **Trial:** inserts a run with `is_trial = true`, `minutes = 20`, status `queued`. A unique violation becomes "The free trial has already been used for this email or website…".
+   - **Paid:** inserts with status `pending_payment`, then redirects to Stripe Checkout.
+   - **Dev without Stripe keys:** skips payment. Production refuses to book without keys.
+2. **Payment.** The webhook (signature-verified) or the return-page check sets `queued`. Both use the same idempotent `markRunPaid`.
+3. **Pickup** (`worker/index.ts`).
+   - Claims Principal shifts first, then oldest first, and sets `deadline_at = now + minutes`.
+   - Writes a heartbeat every 30s. A silent run is re-claimed after 2 minutes and resumes.
+   - The worker refuses to start without `ANTHROPIC_API_KEY`.
+4. **Map the site** (inside the Dev phase). A breadth-first crawl of up to 25 pages (10 on a trial) records status, load time, errors and an accessibility outline. It is saved to `runs.site_map` for resuming.
+5. **Four agent phases** (`agentWindows()` splits the time until `deadline − min(2 min, 10%)`). For each agent in order:
+   - `runs.agent` and `runs.activity` are updated, which drives the live page and the 3D camera.
+   - **Automated checks first, once per shift:**
+     - UAT: an axe-core accessibility audit per page (Lead and up).
+     - Prod: fresh page-load smoke tests on every page, a Core Web Vitals check per page (Lead and up), and a security-header review (Principal).
+   - **Then AI-planned tests of the agent's type.** Claude receives the site map, the agent's focus, the plan's depth and all tests so far, and returns 6–10 cases. Each runs in a fresh Chromium context (desktop, or Pixel 7 mobile when the plan allows it), with Claude driving the `browser` tool (goto, click, fill, press, select, hover, expect_*) and `finish`.
+   - If an agent runs out of useful tests, the next agent starts early. A test cut off by the end of the shift is left "not reached".
+6. **Report.** Claude writes the score, summary, strengths, recommendations and a note per agent. The run is marked `completed`, then the email is sent.
+7. **Export.** The browser actions actually performed are turned into Playwright code, grouped by agent.
+
+**Errors:** a crash during testing still produces a report of what ran. A crash in the report step marks the run `failed` with a friendly message.
+
+### Claude API usage (`worker/ai.ts`)
+- `@anthropic-ai/sdk` via `client.beta.messages.create` / `.parse`, with server-side refusal fallback (`fallbacks: "default"`).
+- Model and effort come from the plan. The report uses effort `medium`.
+- Prompt caching (`cache_control: ephemeral`) on execution calls. Page content is treated as data, not instructions.
+- **Every response's usage is saved** to `ai_usage`: input, output, cache read and cache write tokens, plus cost in USD from the table in §2. If a fallback answered on another model, that model's prices are used. Tracking failures are logged and never stop a shift.
+
+---
+
+## 5. Admin dashboard (owner only)
+
+- **Sign-in:**
+  - Set `ADMIN_PASSWORD` in the environment. The dashboard is off while it's empty.
+  - Password comparison is constant-time, and a failed attempt waits 800 ms.
+  - The session cookie `ts_admin` is `<expiry>.<HMAC>`, httpOnly, SameSite=Strict, path `/admin`, valid for 12 hours. Changing the password signs everyone out.
+- **Period switch:** last 7 days, last 30 days, or all time.
+- **Totals:** tokens (input, output, cached), Claude cost, API calls, revenue from paid shifts (trials excluded), profit and margin.
+- **Token calculator:** pick a plan, hours per shift and shifts per month. It shows tokens, Claude cost, revenue and profit per shift and per month, using real averages from completed shifts per plan (estimates until then).
+- **Tables:** usage by model, by agent (including the report writer) and by day; recent shifts with tokens, cost and revenue; custom pricing requests with reply-by-email links.
+
+---
+
+## 6. Tech stack
+
+| Layer | Choice |
+|---|---|
+| Web | Next.js 16.3 (App Router, Turbopack, React Compiler), React 19, TypeScript strict |
+| Styling | Tailwind CSS v4 + design tokens and motion in `globals.css` (no component library) |
+| 3D | three.js, loaded lazily after the page is interactive |
+| Fonts | Unbounded (display), Familjen Grotesk (body), JetBrains Mono (data), via `next/font` |
+| Validation | Zod v4 |
+| Database | Supabase Postgres via `postgres` (postgres.js, `prepare: false` for the pooler) |
+| Browser automation | Playwright (Chromium), axe-core for accessibility |
+| AI | Claude API (`@anthropic-ai/sdk`): Sonnet 5.5, Opus 5.5, Fable 5.1 |
+| Payments / email | Stripe Checkout / Resend (plain HTTP) |
+| Worker runtime | Node 24 + `tsx` |
+
+---
+
+## 7. Code map
+
+```
+src/app/
+  page.tsx                  landing page (composes the sections below + FAQ, CTA, footer)
+  _landing/                 Hero, ShiftHud, Ticker, Pipeline, Consoles, ReportStack, Pricing, samples.ts
+  layout.tsx, globals.css   fonts, PipelineScene backdrop, colour tokens, all motion
+  error.tsx                 friendly error page
+  hire/                     booking page, form (plans, trial/hours), server action
+  custom/                   custom pricing page, form, server action
+  runs/[id]/                page, LiveShift, AgentPipeline, Report, RunControls, spec + screenshot routes
+  admin/                    dashboard page, data.ts (queries), TokenCalculator, login/, actions.ts
+  api/stripe/webhook/       Stripe webhook
+src/components/
+  Logo.tsx                  animated mark + wordmark
+  SiteHeader.tsx, UrlForm.tsx, SplitText.tsx, ShiftLog.tsx
+  scene/PipelineScene.tsx   canvas, lazy three.js loader, section → stage observer, StageSync
+  scene/scene.ts            the three.js scene (cores, pipeline, packets, camera shots)
+src/lib/
+  agents.ts                 AGENTS, agentWindows()
+  plans.ts                  SITE, MODELS (prices), PLANS, HOUR_OPTIONS, TRIAL_MINUTES, tokenCost()
+  db.ts                     postgres client, json(), isUuid, data types
+  admin.ts                  admin session (password check, signed cookie)
+  net.ts                    SSRF guard      spec.ts  Playwright export      payments.ts  Stripe
+  log.ts                    structured JSON logging
+worker/
+  index.ts                  claim loop, site map, four agent phases, automated checks, report, email
+  browser.ts                context + SSRF routing, page watcher, actions, crawler, auditPages, accessibilityAudit
+  ai.ts                     per-plan model, usage recording, planner per agent, executor, report writer
+scripts/                    migrate.ts, selfcheck.ts
+supabase/migrations/        init · free_trial · agents_plans_usage
+```
+
+---
+
+## 8. Data model
+
+**`runs`**
+- `url`, `email`, `plan` (junior | senior | lead | principal), `minutes` (1–480), `is_trial`, `notes`
+- `status` (pending_payment → queued → running → completed | failed)
+- `agent` (on duty), `activity`, `stripe_session_id`, `site_map`, `report` (including `agentNotes`), `error`
+- Timestamps: `started_at`, `deadline_at`, `heartbeat_at`, `completed_at`, `created_at`, `updated_at`
+- Constraints: a trial is 20 minutes or less; one trial per `lower(email)`; one trial per host (`www.` ignored).
+
+**`test_cases`**
+- `agent` (dev | staging | uat | prod; this sets the test type), `seq`, `title`
+- `category` (smoke | functional | e2e | negative | ui | accessibility | performance | security), `priority`, `viewport`
+- `start_url`, `steps`, `expected`, `status`, `actual`, `severity`, `actions` (for the export), `screenshot`, `finished_at`
+
+**`ai_usage`** (append-only): `run_id`, `agent` (null for the report writer), `purpose` (plan | execute | report), `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `created_at`.
+
+**`custom_requests`**: `name`, `email`, `company`, `website`, `message`, `status` (new | contacted | closed), timestamps.
+
+RLS is enabled on all tables with no policies. Only the server's `DATABASE_URL` can read them.
+
+---
+
+## 9. Configuration and running
+
+`.env.local` (template in `.env.example`):
+
+| Variable | Used by | Notes |
+|---|---|---|
+| `DATABASE_URL` | web + worker | Supabase Transaction pooler, URL-encoded password |
+| `ANTHROPIC_API_KEY` | worker | Required |
+| `APP_URL` | web + worker | Redirects and email links |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | web | Empty in dev means payment is skipped |
+| `RESEND_API_KEY`, `EMAIL_FROM` | worker | Optional |
+| `ADMIN_PASSWORD` | web | Turns on `/admin` |
+| `SHIFT_MINUTES_PER_HOUR` | worker | Dev only: shortens shifts |
+
+**Supabase project:** `ulvyxohdjkuluhhlecdz` (ap-southeast-1).
+- Pooler: `aws-0-ap-southeast-1.pooler.supabase.com:6543`.
+- All three migrations are applied.
+- The Supabase connector in Claude Code is linked to a *different* project (`pmbatptoffscqtnfmhbz`, PeptoLogics). Don't use it for TestShift.
+
+```bash
+npm install
+npx playwright install chromium
+npm run db:migrate
+npm run dev            # web app
+npm run worker         # AI tester, second terminal
+npm run lint && npm run typecheck && npm run check && npm run build
+```
+
+**Deploy:**
+- Web on Vercel.
+- Worker as a long-running container using the `mcr.microsoft.com/playwright` image, with outbound network restricted to the public internet. Scale by adding copies.
+
+**Git:**
+- Remote: `git@github-personal:haiderjalal/testshift.git`.
+- `main` holds the starter project; `feature/mvp` has the app.
+
+---
+
+## 10. Design language and motion
+
+- **Theme: a dark test lab.** Colours (tokens in `globals.css`):
+  - Paper `#05070d`, card `#0a0f1c`, ink `#e8edf6`, graphite `#8e99ae`.
+  - Agents: Dev cyan `#45d4ff`, Staging violet `#a07cff`, UAT pink `#ff6fd1`, Prod orange `#ff9f43`.
+  - Status: marker yellow `#ffe45c` for bugs, pass `#3ddc97`, fail `#ff5470`.
+- **3D scene** (`scene.ts`), a fixed backdrop on every page except `/admin`:
+  - Four agent cores (icosahedron, octahedron, torus knot, dodecahedron), each with a wire shell, orbit ring, halo and coloured light.
+  - A colour-blended pipeline with test packets flowing along it, drifting dust, and a grid floor.
+  - The camera follows `<html data-stage>`: sections marked `data-stage` set it as you scroll, and the live shift page sets it to the agent on duty.
+  - It dims in text-heavy sections and on phones, and holds still under reduced motion.
+- **Logo:** the hexagon draws itself, the check follows, and four agent nodes pulse in pipeline order. "Shift" slides in letter by letter, and a light sweep passes every 6 seconds. Hover replays it.
+- **Landing motion:**
+  - Headline characters rise in, with a ticking sample-shift readout.
+  - An endless ticker of sample checks.
+  - Pinned agent panels with a rail that fills as you scroll and a sticky stepper that follows the section.
+  - Four typing consoles, an exploding 3D report stack, and a score that counts up on scroll.
+  - Pricing cards tilt in, with rotating four-colour borders.
+- **Everywhere:** CSS scroll-driven animations with no JavaScript (Firefox shows the final state), and `prefers-reduced-motion` stops all motion.
+
+---
+
+## 11. Security and safety
+
+- Zod validation on the server, backed by database constraints.
+- SSRF guard at booking and on every browser request. Production workers also need network isolation.
+- Customers must confirm permission. The tester uses obvious test data, never enters card details, avoids destructive actions and ignores instructions in page content. Security checks are passive (response headers only).
+- Stripe webhooks are signature-verified, and payment confirmation is idempotent.
+- The admin session is a signed, expiring, httpOnly cookie; sign-in is constant-time and slowed after a failure. The quote form has a honeypot field.
+- `npm run check` asserts the SSRF blocklist, the export grouping, token cost maths and agent windows.
+
+---
+
+## 12. Status
+
+**Verified working** (2026-09-30):
+- The landing page on desktop and mobile. A headless tour confirmed each section drives the 3D camera, WebGL loads and there are no console errors.
+- The live shift page with the agent pipeline, and the report with the verdict, agent notes and grouped cases.
+- The Playwright export grouped by agent.
+- The booking form with four plans.
+- The custom quote form submitting.
+- The admin sign-in (wrong password rejected, secure cookie) and the dashboard showing usage, cost and requests.
+- The free-trial rules.
+- Lint, typecheck, self-check and the production build.
+
+**Not yet verified:**
+- The live AI loop, because no `ANTHROPIC_API_KEY` has been configured. That includes the planner and executor on all three models, and real token logging.
+- The axe and web-vitals audits inside a real shift.
+- Stripe with test keys, and Resend.
+
+---
+
+## 13. Roadmap and open decisions
+
+**Before charging real customers:**
+- Refunds or credit for failed shifts and unused time.
+- Screenshots in Supabase Storage instead of the database.
+- Booking rate limits.
+- Terms of service.
+- Measure real AI cost per plan and tune effort.
+- Admin actions: mark quote requests contacted, refund, retry.
+
+**Later:**
+- Logged-in testing.
+- Real unit tests via GitHub.
+- Scheduled regression shifts.
+- Customer accounts.
+- Video of failed tests.
+- Cross-browser runs (Firefox, WebKit).
+
+**Open decisions for the owner:**
+- Final name and domain.
+- Whether trials should be limited to Junior, to cap AI cost.
+- Whether shifts that run out of tests should end early with credit.

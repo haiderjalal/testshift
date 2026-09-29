@@ -1,85 +1,271 @@
 @import "tailwindcss";
 
+/* TestShift: a dark test lab. Each agent owns a hue; yellow is reserved for flagging bugs. */
 @theme {
-  --color-paper: #f5f6f8;
-  --color-card: #ffffff;
-  --color-ink: #0e1726;
-  --color-graphite: #586173;
-  --color-rule: #dde1e7;
+  --color-paper: #05070d;
+  --color-card: #0a0f1c;
+  --color-raised: #111a2d;
+  --color-ink: #e8edf6;
+  --color-graphite: #8e99ae;
+  --color-rule: #1b2438;
   --color-marker: #ffe45c;
-  --color-pass: #187a4f;
-  --color-fail: #c13b22;
-  --color-hold: #8f5d0e;
+  --color-pass: #3ddc97;
+  --color-fail: #ff5470;
+  --color-hold: #a5b1c6;
+  --color-dev: #45d4ff;
+  --color-staging: #a07cff;
+  --color-uat: #ff6fd1;
+  --color-prod: #ff9f43;
 
+  --font-display: var(--font-unbounded), var(--font-familjen), ui-sans-serif, sans-serif;
   --font-sans: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
+  background: var(--color-paper);
   scroll-behavior: smooth;
 }
 
 body {
-  background: var(--color-paper);
   color: var(--color-ink);
+  /* Soft agent-coloured light behind everything, visible before (or without) the 3D scene. */
+  background:
+    radial-gradient(60rem 40rem at 85% -10%, color-mix(in srgb, var(--color-staging) 14%, transparent), transparent 70%),
+    radial-gradient(50rem 36rem at -10% 30%, color-mix(in srgb, var(--color-dev) 10%, transparent), transparent 70%);
+  background-attachment: fixed;
 }
 
-/* Highlighter stroke: how TestShift flags things, from the headline to every bug. */
-.marker {
-  background: linear-gradient(
-    transparent 58%,
-    var(--color-marker) 58%,
-    var(--color-marker) 92%,
-    transparent 92%
-  );
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-  padding-inline: 0.08em;
+::selection {
+  background: color-mix(in srgb, var(--color-dev) 35%, transparent);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-ink);
+  outline: 2px solid var(--color-dev);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
-@keyframes log-in {
+/* Bug highlight: yellow text with a highlighter stroke underneath. */
+.marker {
+  color: var(--color-marker);
+  background-image: linear-gradient(
+    transparent 84%,
+    color-mix(in srgb, var(--color-marker) 55%, transparent) 84%,
+    color-mix(in srgb, var(--color-marker) 55%, transparent) 96%,
+    transparent 96%
+  );
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ------------------------------------------------------------------ buttons & surfaces */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding-inline: 1.5rem;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-weight: 500;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-dev) 40%, transparent),
+    0 10px 40px -10px color-mix(in srgb, var(--color-dev) 60%, transparent);
+  transition:
+    transform 200ms,
+    box-shadow 200ms;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px var(--color-dev),
+    0 14px 50px -8px color-mix(in srgb, var(--color-dev) 80%, transparent);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.glass {
+  background: color-mix(in srgb, var(--color-card) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 9%, transparent);
+}
+
+/* Rotating four-agent border. Faint at rest, bright on hover. */
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes spin-angle {
+  to {
+    --angle: 360deg;
+  }
+}
+.glow-card {
+  position: relative;
+  isolation: isolate;
+  border-radius: 1.5rem;
+}
+.glow-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--angle),
+    var(--color-dev),
+    var(--color-staging),
+    var(--color-uat),
+    var(--color-prod),
+    var(--color-dev)
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  opacity: 0.35;
+  animation: spin-angle 9s linear infinite;
+  transition: opacity 300ms;
+}
+.glow-card:hover::before,
+.glow-card:focus-within::before {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ logo */
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes redraw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.logo-hex,
+.logo-check {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.logo-check {
+  animation-duration: 450ms;
+  animation-delay: 900ms;
+}
+.logo:hover .logo-hex {
+  animation-name: redraw;
+  animation-delay: 0ms;
+}
+.logo:hover .logo-check {
+  animation-name: redraw;
+  animation-delay: 500ms;
+}
+
+/* The four vertex nodes light up in pipeline order: Dev → Staging → UAT → Prod. */
+@keyframes node-pulse {
+  0%,
+  30%,
+  100% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.6);
+  }
+}
+.logo-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-pulse 4s ease-in-out infinite;
+  animation-delay: calc(1.2s + var(--i) * 1s);
+}
+
+@keyframes letter-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(70%) skewX(-14deg);
+    filter: blur(4px);
   }
 }
-
-.log-in {
-  animation: log-in 280ms ease-out both;
+.logo-letter {
+  display: inline-block;
+  animation: letter-in 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(350ms + var(--i) * 45ms);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
+/* A band of light sweeps across the wordmark; overlay blending makes it show on the letters, not the background. */
+@keyframes sheen {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
   }
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
+  35%,
+  100% {
+    transform: translateX(420%) skewX(-20deg);
   }
 }
-
-/* ------------------------------------------------------------------ landing page motion & 3D */
-
-/* Faint test-sheet grid behind the hero, fading out at the edges. */
-.sheet-grid {
-  background-image:
-    linear-gradient(var(--color-rule) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-rule) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 20%, transparent 75%);
-  opacity: 0.55;
+.logo-word {
+  position: relative;
+  overflow: hidden;
+  padding-inline: 0.1em;
+}
+.logo-word::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--color-dev), transparent);
+  mix-blend-mode: overlay;
+  transform: translateX(-120%) skewX(-20deg);
+  animation: sheen 6s 2.2s ease-in-out infinite both;
+  pointer-events: none;
 }
 
-/* Page-load: hero copy rises line by line, then the scene swings into place. */
+/* ------------------------------------------------------------------ text & load motion */
+
+@keyframes char-in {
+  0% {
+    opacity: 0;
+    transform: translateY(0.45em);
+    filter: blur(10px);
+    color: var(--color-dev);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+    color: var(--color-dev);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    color: var(--char-color, var(--color-ink));
+  }
+}
+.char {
+  display: inline-block;
+  white-space: pre;
+  color: var(--char-color, var(--color-ink));
+  animation: char-in 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(150ms + var(--i) * 26ms);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -87,93 +273,130 @@ body {
   }
 }
 .rise {
-  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(var(--d, 0) * 90ms);
+  animation: rise 800ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--d, 0) * 110ms);
 }
 
-@keyframes scene-in {
-  from {
+@keyframes blink {
+  50% {
     opacity: 0;
-    transform: rotateX(24deg) rotateY(-32deg) translateY(40px);
   }
 }
-
-.scene {
-  perspective: 1600px;
-}
-.scene-enter {
-  transform-style: preserve-3d;
-  animation: scene-in 1100ms 250ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-.scene-rig {
-  position: relative;
-  transform-style: preserve-3d;
-  transition: transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.layer-back,
-.layer-front {
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .scene-rig {
-    transform: rotateX(calc(7deg + var(--tilt-y, 0deg))) rotateY(calc(-13deg + var(--tilt-x, 0deg)));
-  }
-  .layer-back,
-  .layer-front {
-    display: block;
-    position: absolute;
-    transform-style: preserve-3d;
-  }
-  .layer-back {
-    top: -19%;
-    left: -9%;
-    width: 78%;
-    transform: translateZ(-140px);
-  }
-  .layer-mid {
-    transform: translateZ(0);
-  }
-  .layer-front {
-    bottom: -4%;
-    right: -7%;
-    width: 56%;
-    transform: translateZ(110px);
-  }
+.cursor {
+  animation: blink 1s steps(1) infinite;
 }
 
 @keyframes float {
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 .float {
   animation: float 6s ease-in-out infinite;
 }
 
-/* The scanner line sweeping the page the tester is reading. */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-out infinite;
+  animation-delay: calc(var(--i, 0) * 500ms);
+}
+
+/* Endless ticker of checks. The content is rendered twice; pause on hover. */
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee {
+  animation: marquee 45s linear infinite;
+}
+.marquee-wrap:hover .marquee {
+  animation-play-state: paused;
+}
+
+/* Scanner sweep for the console windows. */
 @keyframes scan {
   from {
-    transform: translateY(0);
+    transform: translateY(-100%);
   }
   to {
-    transform: translateY(var(--scan-distance, 220px));
+    transform: translateY(400%);
   }
 }
 .scan-line {
-  animation: scan 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation: scan 4s linear infinite;
 }
 
-@keyframes flag {
-  50% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-fail) 18%, transparent);
+/* Count-up without JavaScript: animate an integer and print it with a CSS counter. */
+@property --num {
+  syntax: "<integer>";
+  initial-value: 0;
+  inherits: false;
+}
+@keyframes count {
+  from {
+    --num: 0;
   }
 }
-.flag {
-  animation: flag 1.8s ease-in-out infinite;
+.count-up {
+  --num: var(--to);
+  counter-reset: n var(--num);
+  animation: count 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.count-up::after {
+  content: counter(n);
 }
 
-/* Exploded report: four layers of the deliverable, stacked isometrically. */
+/* Faint lab grid. */
+.lab-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+}
+
+/* ------------------------------------------------------------------ pipeline stepper (follows the section you read) */
+
+.stage-node {
+  color: var(--color-graphite);
+  border-color: var(--color-rule);
+  transition:
+    color 400ms,
+    border-color 400ms,
+    background 400ms,
+    box-shadow 400ms;
+}
+html[data-stage="dev"] .stage-node[data-agent="dev"],
+html[data-stage="staging"] .stage-node[data-agent="staging"],
+html[data-stage="uat"] .stage-node[data-agent="uat"],
+html[data-stage="prod"] .stage-node[data-agent="prod"] {
+  color: var(--color-paper);
+  border-color: var(--agent);
+  background: var(--agent);
+  box-shadow: 0 0 30px -4px var(--agent);
+}
+
+/* The 3D scene steps back in text-heavy sections and on phones, so copy stays readable. */
+html[data-stage="overview"] canvas[data-ready="true"] {
+  opacity: 0.4;
+}
+@media (max-width: 767px) {
+  canvas[data-ready="true"] {
+    opacity: 0.55;
+  }
+}
+
+/* ------------------------------------------------------------------ exploded report stack */
+
 .stack {
   transform-style: preserve-3d;
   transform: rotateX(58deg) rotateZ(-36deg);
@@ -184,44 +407,32 @@ body {
   transform: translateZ(calc(var(--i) * 62px));
 }
 
-/* Scroll-driven animations: native, no JS. Browsers without support show the finished state. */
+/* ------------------------------------------------------------------ scroll-driven (native, no JS) */
+
 @supports (animation-timeline: view()) {
   @keyframes reveal {
     from {
       opacity: 0;
-      transform: translateY(32px);
+      transform: translateY(40px) scale(0.98);
+      filter: blur(6px);
     }
   }
   .reveal {
     animation: reveal linear both;
     animation-timeline: view();
-    animation-range: entry 0% entry 55%;
+    animation-range: entry 0% entry 60%;
   }
 
-  @keyframes draw {
+  @keyframes reveal-side {
     from {
-      transform: scaleX(0);
+      opacity: 0;
+      transform: translateX(-60px) rotateY(12deg);
     }
   }
-  .steps {
-    view-timeline: --steps block;
-  }
-  .step-fill {
-    animation: draw linear both;
-    animation-timeline: --steps;
-    animation-range: cover 20% cover 45%;
-  }
-  @keyframes step-on {
-    from {
-      background: var(--color-card);
-      color: var(--color-graphite);
-    }
-  }
-  .step-dot {
-    animation: step-on linear both;
-    animation-timeline: --steps;
-    /* Each dot lights up as the line reaches it: dot i sits at i/2 of the line. */
-    animation-range: cover calc(19% + var(--i) * 12.5%) cover calc(21% + var(--i) * 12.5%);
+  .reveal-side {
+    animation: reveal-side linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 35%;
   }
 
   @keyframes explode {
@@ -236,5 +447,49 @@ body {
     animation: explode linear both;
     animation-timeline: --stack;
     animation-range: entry 20% cover 50%;
+  }
+
+  @keyframes rail {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  .pipeline {
+    view-timeline: --pipeline block;
+  }
+  .pipeline-rail {
+    animation: rail linear both;
+    animation-timeline: --pipeline;
+    animation-range: cover 10% cover 90%;
+  }
+
+  @keyframes tilt-in {
+    from {
+      opacity: 0;
+      transform: perspective(900px) rotateX(18deg) translateY(60px);
+    }
+  }
+  .tilt-in {
+    animation: tilt-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 70%;
+  }
+}
+
+/* ------------------------------------------------------------------ reduced motion: everything still, nothing hidden */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .logo-hex,
+  .logo-check {
+    stroke-dashoffset: 0;
   }
 }

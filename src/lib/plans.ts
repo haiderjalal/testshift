@@ -1,44 +1,105 @@
 export const SITE = {
   name: "TestShift",
   description:
-    "Rent an AI QA engineer by the hour. It writes test cases, runs them in a real browser, and sends you a bug report.",
+    "Rent a team of four AI QA agents by the hour. Dev, Staging, UAT and Prod agents run unit, integration, end-to-end and smoke tests in a real browser and hand you the bug report.",
 };
 
-export const MODEL = "claude-opus-5-5";
+/** Claude models the tester can run on, with list prices in USD per million tokens (cache writes are 5-minute, 1.25× input). */
+export const MODELS = {
+  "claude-sonnet-5-5": { label: "Claude Sonnet 5.5", input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "claude-opus-5-5": { label: "Claude Opus 5.5", input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-fable-5-1": { label: "Claude Fable 5.1", input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+} as const;
 
-/** Hourly plans. `effort` and `focus` steer the AI tester; everything else is shown to customers. */
+export type ModelId = keyof typeof MODELS;
+
+interface Plan {
+  name: string;
+  rate: number;
+  model: ModelId;
+  effort: "low" | "medium" | "high";
+  pitch: string;
+  features: readonly string[];
+  /** Deterministic checks and viewports the worker enables for this plan. */
+  checks: { mobile: boolean; accessibility: boolean; performance: boolean; securityHeaders: boolean };
+  /** Principal shifts are claimed before everything else in the queue. */
+  priority: boolean;
+  focus: string;
+}
+
+/** Hourly plans. `model`, `effort`, `checks` and `focus` steer the AI tester; the rest is shown to customers. */
 export const PLANS = {
   junior: {
     name: "Junior QA",
     rate: 30,
-    pitch: "Checks that your main flows work.",
-    features: [
-      "Smoke test of every page it can reach",
-      "Functional and end-to-end tests of key journeys",
-      "Bug list with steps to reproduce",
-      "Playwright test suite to keep",
-    ],
+    model: "claude-sonnet-5-5",
     effort: "low",
-    focus:
-      "Focus on the core user journeys: navigation, forms, sign-up, search, cart and checkout if present. Verify each works end to end.",
+    pitch: "All four agents on your core flows.",
+    features: [
+      "Dev, Staging, UAT and Prod agents",
+      "Unit, integration, end-to-end and smoke tests",
+      "Desktop browser testing",
+      "Bug report and Playwright suite",
+    ],
+    checks: { mobile: false, accessibility: false, performance: false, securityHeaders: false },
+    priority: false,
+    focus: "Stick to the core user journeys: navigation, forms, sign-up, search, cart and checkout if present.",
   },
   senior: {
     name: "Senior QA",
     rate: 50,
-    pitch: "Digs into edge cases and polish.",
+    model: "claude-opus-5-5",
+    effort: "medium",
+    pitch: "Edge cases, bad inputs and mobile.",
     features: [
       "Everything in Junior QA",
+      "Mobile screen testing",
       "Negative and edge-case inputs",
-      "Mobile viewport and accessibility checks",
-      "Deeper reasoning on every test",
+      "Stronger reasoning on every test",
     ],
-    effort: "high",
+    checks: { mobile: true, accessibility: false, performance: false, securityHeaders: false },
+    priority: false,
     focus:
-      "Cover the core journeys first, then go deep: invalid and edge-case inputs, validation messages, mobile viewport behaviour, keyboard access and accessible names, empty and error states, and consistency across pages.",
+      "Cover the core journeys, then go deeper: invalid and edge-case inputs, validation messages, mobile behaviour, empty and error states.",
   },
-} as const;
+  lead: {
+    name: "Lead QA",
+    rate: 100,
+    model: "claude-opus-5-5",
+    effort: "high",
+    pitch: "Adds accessibility and performance audits.",
+    features: [
+      "Everything in Senior QA",
+      "Accessibility audit (WCAG 2 AA) on every page",
+      "Performance audit: load speed and layout shift",
+      "High-effort reasoning, more thorough plans",
+    ],
+    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: false },
+    priority: false,
+    focus:
+      "Be thorough: core journeys, edge cases and bad inputs, mobile behaviour, keyboard access and accessible names, loading and error states, and consistency across pages.",
+  },
+  principal: {
+    name: "Principal QA",
+    rate: 150,
+    model: "claude-fable-5-1",
+    effort: "medium",
+    pitch: "Anthropic's most capable model on your release.",
+    features: [
+      "Everything in Lead QA",
+      "Runs on Claude Fable 5.1",
+      "Security-header review",
+      "Priority queue: your shift starts first",
+    ],
+    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: true },
+    priority: true,
+    focus:
+      "Test like a principal engineer signing off a release: every core journey, the riskiest edge cases, state that persists across pages and reloads, mobile and keyboard use, and anything that could embarrass the team in production.",
+  },
+} as const satisfies Record<string, Plan>;
 
 export type PlanId = keyof typeof PLANS;
+export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
 
 export const HOUR_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
 
@@ -49,4 +110,16 @@ export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
   const hours = minutes / 60;
   return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
+
+/** Cost in USD of one Claude response, from its token usage. */
+export function tokenCost(
+  model: ModelId,
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number },
+): number {
+  const p = MODELS[model];
+  return (
+    (usage.input * p.input + usage.output * p.output + usage.cacheRead * p.cacheRead + usage.cacheWrite * p.cacheWrite) /
+    1_000_000
+  );
 }

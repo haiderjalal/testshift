@@ -1,7 +1,15 @@
+import axe from "axe-core";
 import { devices, type Browser, type BrowserContext, type Page } from "playwright";
 
 import type { BrowserAction, SitePage } from "@/lib/db";
 import { isPublicHost } from "@/lib/net";
+
+declare global {
+  interface Window {
+    axe: typeof axe;
+    __vitals?: { lcp: number | null; cls: number };
+  }
+}
 
 const hostChecks = new Map<string, Promise<boolean>>();
 const SKIP_LINK = /\.(pdf|zip|jpe?g|png|gif|svg|webp|mp4|mp3|dmg|exe)$/i;
@@ -115,7 +123,33 @@ function normalizeLink(href: string, origin: string): string | null {
   }
 }
 
-/** Breadth-first crawl of same-origin pages, recording load status and problems for smoke tests. */
+interface Visit {
+  status: number;
+  loadMs: number;
+  issues: string[];
+  headers: Record<string, string>;
+}
+
+/** Loads one page and records its HTTP status, load time and the main document's response headers. */
+async function visit(page: Page, url: string): Promise<Visit> {
+  const started = Date.now();
+  const issues: string[] = [];
+  let status = 0;
+  let headers: Record<string, string> = {};
+  try {
+    const response = await page.goto(url, { waitUntil: "load" });
+    status = response?.status() ?? 0;
+    headers = response?.headers() ?? {};
+  } catch (e) {
+    issues.push(`could not load: ${(e as Error).message.split("\n")[0]}`);
+  }
+  const loadMs = Date.now() - started;
+  // SPAs render after load; give them a moment before reading the page.
+  await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
+  return { status, loadMs, issues, headers };
+}
+
+/** Breadth-first crawl of same-origin pages, recording load status and problems. */
 export async function crawlSite(
   browser: Browser,
   startUrl: string,
@@ -133,18 +167,7 @@ export async function crawlSite(
   try {
     for (let url = queue.shift(); url && pages.length < maxPages && Date.now() < until; url = queue.shift()) {
       drain();
-      const started = Date.now();
-      let status = 0;
-      const issues: string[] = [];
-      try {
-        status = (await page.goto(url, { waitUntil: "load" }))?.status() ?? 0;
-      } catch (e) {
-        issues.push(`could not load: ${(e as Error).message.split("\n")[0]}`);
-      }
-      const loadMs = Date.now() - started;
-      // SPAs render after load; give them a moment before reading links.
-      await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
-
+      const { status, loadMs, issues } = await visit(page, url);
       const links = await page.$$eval("a[href]", (as) => as.map((a) => (a as HTMLAnchorElement).href)).catch(() => []);
       for (const link of links) {
         const next = normalizeLink(link, origin);
@@ -167,4 +190,91 @@ export async function crawlSite(
     await context.close();
   }
   return pages;
+}
+
+export interface PageAudit extends Visit {
+  url: string;
+  /** Largest Contentful Paint in ms and Cumulative Layout Shift, measured in the lab. Null if not measured. */
+  lcpMs: number | null;
+  cls: number | null;
+}
+
+/** Re-visits known pages for the Prod agent: fresh load status, errors, and optionally Core Web Vitals. */
+export async function auditPages(
+  browser: Browser,
+  urls: string[],
+  { vitals, until }: { vitals: boolean; until: number },
+): Promise<PageAudit[]> {
+  const context = await openContext(browser, "desktop");
+  if (vitals) {
+    await context.addInitScript(() => {
+      window.__vitals = { lcp: null, cls: 0 };
+      const record = window.__vitals;
+      try {
+        new PerformanceObserver((list) => {
+          const last = list.getEntries().at(-1);
+          if (last) record.lcp = last.startTime;
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+        new PerformanceObserver((list) => {
+          for (const e of list.getEntries() as (PerformanceEntry & { hadRecentInput: boolean; value: number })[]) {
+            if (!e.hadRecentInput) record.cls += e.value;
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      } catch {
+        // Browsers without these entry types simply report no vitals.
+      }
+    });
+  }
+  const page = await context.newPage();
+  const { drain } = watchPage(page);
+  const audits: PageAudit[] = [];
+  try {
+    for (const url of urls) {
+      if (Date.now() > until) break;
+      drain();
+      const result = await visit(page, url);
+      const measured = vitals ? await page.evaluate(() => window.__vitals ?? null).catch(() => null) : null;
+      audits.push({
+        url,
+        ...result,
+        issues: [...result.issues, ...drain()],
+        lcpMs: measured?.lcp ?? null,
+        cls: measured ? measured.cls : null,
+      });
+    }
+  } finally {
+    await context.close();
+  }
+  return audits;
+}
+
+export interface AccessibilityResult {
+  url: string;
+  violations: { id: string; impact: string | null; help: string; count: number }[];
+}
+
+/** Runs axe-core's WCAG 2 A/AA rules on each page for the UAT agent. */
+export async function accessibilityAudit(browser: Browser, urls: string[], until: number): Promise<AccessibilityResult[]> {
+  const context = await openContext(browser, "desktop");
+  const page = await context.newPage();
+  const results: AccessibilityResult[] = [];
+  try {
+    for (const url of urls) {
+      if (Date.now() > until) break;
+      await visit(page, url);
+      // page.evaluate is not subject to the site's CSP, unlike injecting a <script> tag.
+      await page.evaluate(axe.source);
+      const violations = await page.evaluate(async () => {
+        const report = await window.axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+          resultTypes: ["violations"],
+        });
+        return report.violations.map((v) => ({ id: v.id, impact: v.impact ?? null, help: v.help, count: v.nodes.length }));
+      });
+      results.push({ url, violations });
+    }
+  } finally {
+    await context.close();
+  }
+  return results;
 }
