@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 
 export interface CustomState {
@@ -50,5 +51,26 @@ export async function requestQuote(_prev: CustomState, formData: FormData): Prom
     return { message: "We couldn't send your request. Please try again in a minute." };
   }
   log("info", "Custom pricing request received");
+
+  // Saved above first, so the request is never lost if the email fails; it is always on /admin.
+  const owner = process.env.OWNER_EMAIL;
+  if (owner) {
+    await sendEmail({
+      to: owner,
+      replyTo: email,
+      subject: `New custom pricing request from ${name}${company ? ` (${company})` : ""}`,
+      text: [
+        `Name: ${name}`,
+        `Email: ${email}`,
+        `Company: ${company || "-"}`,
+        `Website: ${website || "-"}`,
+        "",
+        "What they need:",
+        details,
+        "",
+        `Reply to this email to answer them, or see all requests at ${process.env.APP_URL ?? "http://localhost:3000"}/admin`,
+      ].join("\n"),
+    });
+  }
   return { sent: true };
 }
