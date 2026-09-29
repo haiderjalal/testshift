@@ -44,7 +44,8 @@ export interface Run {
   url: string;
   email: string;
   plan: PlanId;
-  hours: number;
+  minutes: number;
+  is_trial: boolean;
   notes: string;
   status: RunStatus;
   activity: string | null;

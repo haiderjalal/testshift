@@ -28,6 +28,8 @@ Rent an AI QA engineer by the hour. Paste a link, book hours, and get a bug repo
 | Junior QA | $30/h | Core journeys and functional/E2E tests. Model effort `low`. |
 | Senior QA | $50/h | Adds edge cases, negative inputs, mobile, and accessibility. Model effort `high`. |
 
+**Free trial:** every customer's first shift is 20 minutes, free, with no card needed. It is limited to one per email address and one per website (`www.` ignored), and the limit is enforced by unique indexes in the database. The trial report ends with a "Book more hours" prompt that pre-fills the form. The length is `TRIAL_MINUTES` in `src/lib/plans.ts`. Expected model cost is roughly $2–5 per trial, which is the customer acquisition cost.
+
 Both plans use Claude Opus 5.5 ($4 input / $20 output per million tokens; cache reads $0.20).
 **Rough model cost** is about $0.10–$0.75 per test case, depending on how many steps it takes. With prompt caching on, that works out to an estimated **$5–15 per shift-hour**, leaving healthy margin at $30/$50.
 Measure real cost per hour on the first 20 shifts (log `response.usage`) before changing prices.

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/SiteHeader";
 import { db, isUuid, type Run, type TestCase } from "@/lib/db";
 import { confirmCheckout } from "@/lib/payments";
-import { PLANS } from "@/lib/plans";
+import { formatDuration, PLANS } from "@/lib/plans";
 
 import { LiveShift } from "./LiveShift";
 import { Report } from "./Report";
@@ -19,7 +19,7 @@ type RunView = Run & { elapsed_ms: number | null };
 async function getRun(id: string): Promise<RunView | undefined> {
   // Elapsed time comes from the database clock, the same one that set the deadline.
   const [run] = await db()<RunView[]>`
-    select id, url, email, plan, hours, notes, status, activity, report, error,
+    select id, url, email, plan, minutes, is_trial, notes, status, activity, report, error,
       started_at, deadline_at, completed_at, created_at,
       (extract(epoch from least(now(), deadline_at) - started_at) * 1000)::float8 as elapsed_ms
     from runs where id = ${id}`;
@@ -49,7 +49,8 @@ export default async function RunPage({ params, searchParams }: PageProps<"/runs
       <SiteHeader showNav={false} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 pt-4 pb-24 sm:px-8">
         <p className="font-mono text-xs text-graphite">
-          {plan.name} · {run.hours} {run.hours === 1 ? "hour" : "hours"} · booked{" "}
+          {plan.name} · {formatDuration(run.minutes)}
+          {run.is_trial && " · free trial"} · booked{" "}
           {run.created_at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
         </p>
         <h1 className="mt-2 text-4xl font-semibold tracking-tight break-words">{new URL(run.url).hostname}</h1>

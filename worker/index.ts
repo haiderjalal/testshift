@@ -22,7 +22,7 @@ async function claimRun(): Promise<Run | null> {
     update runs set
       status = 'running',
       started_at = coalesce(started_at, now()),
-      deadline_at = coalesce(deadline_at, now() + make_interval(secs => hours * ${MINUTES_PER_HOUR * 60})),
+      deadline_at = coalesce(deadline_at, now() + make_interval(secs => minutes * ${MINUTES_PER_HOUR})),
       heartbeat_at = now()
     where id = (
       select id from runs
@@ -136,7 +136,7 @@ async function testUntil(run: Run, browser: Browser, stopAt: number): Promise<vo
 
 async function processRun(run: Run): Promise<void> {
   const deadline = run.deadline_at?.getTime() ?? Date.now();
-  const shiftMs = run.hours * MINUTES_PER_HOUR * 60_000;
+  const shiftMs = run.minutes * MINUTES_PER_HOUR * 1_000;
   const stopAt = deadline - Math.min(2 * 60_000, shiftMs * 0.1); // leave time to write the report
   const heartbeat = setInterval(() => {
     db()`update runs set heartbeat_at = now() where id = ${run.id}`.catch((e) =>
@@ -144,7 +144,7 @@ async function processRun(run: Run): Promise<void> {
     );
   }, HEARTBEAT_MS);
   const browser = await chromium.launch();
-  log("info", "Shift started", { runId: run.id, plan: run.plan, hours: run.hours });
+  log("info", "Shift started", { runId: run.id, plan: run.plan, minutes: run.minutes, trial: run.is_trial });
 
   try {
     try {

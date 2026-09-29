@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useState, type FormEvent } from "react";
 
-import { HOUR_OPTIONS, PLANS, type PlanId } from "@/lib/plans";
+import { HOUR_OPTIONS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
 
 import { bookShift, type BookingState } from "./actions";
 
@@ -18,12 +18,21 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   );
 }
 
-export function HireForm({ defaultUrl, defaultPlan }: { defaultUrl: string; defaultPlan: PlanId }) {
+interface Props {
+  defaultUrl: string;
+  defaultPlan: PlanId;
+  defaultShift: "trial" | number;
+}
+
+export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
   const [state, formAction, pending] = useActionState<BookingState, FormData>(bookShift, {});
   const [plan, setPlan] = useState<PlanId>(defaultPlan);
-  const [hours, setHours] = useState<number>(2);
+  const [shift, setShift] = useState<"trial" | number>(defaultShift);
   const errors = state.errors ?? {};
-  const total = PLANS[plan].rate * hours;
+  const trial = shift === "trial";
+  const total = trial ? 0 : PLANS[plan].rate * shift;
+  const chip =
+    "cursor-pointer rounded-xl border border-rule bg-card py-3 text-center font-mono has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-ink";
 
   // Submitting through onSubmit (not the form's action prop) stops React resetting the form,
   // so every field keeps its value when the server returns validation errors.
@@ -80,25 +89,34 @@ export function HireForm({ defaultUrl, defaultPlan }: { defaultUrl: string; defa
       </fieldset>
 
       <fieldset>
-        <legend className="font-medium">Hours</legend>
-        <div className="mt-2 grid grid-cols-6 gap-2">
+        <legend className="font-medium">Shift length</legend>
+        <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[auto_repeat(6,minmax(0,1fr))]">
+          <label className={`${chip} col-span-3 px-4 whitespace-nowrap sm:col-span-1 has-[:not(:checked)]:border-pass/50 has-[:not(:checked)]:text-pass`}>
+            <input
+              type="radio"
+              name="hours"
+              value="trial"
+              checked={trial}
+              onChange={() => setShift("trial")}
+              className="sr-only"
+            />
+            {TRIAL_MINUTES} min free
+          </label>
           {HOUR_OPTIONS.map((h) => (
-            <label
-              key={h}
-              className="cursor-pointer rounded-xl border border-rule bg-card py-3 text-center font-mono has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-ink"
-            >
+            <label key={h} className={chip}>
               <input
                 type="radio"
                 name="hours"
                 value={h}
-                checked={hours === h}
-                onChange={() => setHours(h)}
+                checked={shift === h}
+                onChange={() => setShift(h)}
                 className="sr-only"
               />
               {h}h
             </label>
           ))}
         </div>
+        <FieldError id="hours-error" message={errors.hours} />
       </fieldset>
 
       <div>
@@ -164,10 +182,12 @@ export function HireForm({ defaultUrl, defaultPlan }: { defaultUrl: string; defa
           disabled={pending}
           className="h-13 w-full rounded-full bg-ink px-6 text-lg font-medium text-paper hover:bg-ink/85 disabled:opacity-60"
         >
-          {pending ? "Booking…" : `Book ${hours}-hour shift · $${total}`}
+          {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : `Book ${shift}-hour shift · $${total}`}
         </button>
         <p className="mt-3 text-center text-sm text-graphite">
-          {PLANS[plan].name} · {hours} × ${PLANS[plan].rate}. You&apos;ll pay securely with Stripe.
+          {trial
+            ? "No card needed. One free shift per email address and website."
+            : `${PLANS[plan].name} · ${shift} × $${PLANS[plan].rate}. You'll pay securely with Stripe.`}
         </p>
       </div>
     </form>
