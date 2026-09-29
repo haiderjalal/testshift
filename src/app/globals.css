@@ -1,26 +1,240 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-paper: #f5f6f8;
+  --color-card: #ffffff;
+  --color-ink: #0e1726;
+  --color-graphite: #586173;
+  --color-rule: #dde1e7;
+  --color-marker: #ffe45c;
+  --color-pass: #187a4f;
+  --color-fail: #c13b22;
+  --color-hold: #8f5d0e;
+
+  --font-sans: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* Highlighter stroke: how TestShift flags things, from the headline to every bug. */
+.marker {
+  background: linear-gradient(
+    transparent 58%,
+    var(--color-marker) 58%,
+    var(--color-marker) 92%,
+    transparent 92%
+  );
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding-inline: 0.08em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@keyframes log-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.log-in {
+  animation: log-in 280ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ landing page motion & 3D */
+
+/* Faint test-sheet grid behind the hero, fading out at the edges. */
+.sheet-grid {
+  background-image:
+    linear-gradient(var(--color-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rule) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 20%, transparent 75%);
+  opacity: 0.55;
+}
+
+/* Page-load: hero copy rises line by line, then the scene swings into place. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+.rise {
+  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--d, 0) * 90ms);
+}
+
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: rotateX(24deg) rotateY(-32deg) translateY(40px);
+  }
+}
+
+.scene {
+  perspective: 1600px;
+}
+.scene-enter {
+  transform-style: preserve-3d;
+  animation: scene-in 1100ms 250ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.scene-rig {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.layer-back,
+.layer-front {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .scene-rig {
+    transform: rotateX(calc(7deg + var(--tilt-y, 0deg))) rotateY(calc(-13deg + var(--tilt-x, 0deg)));
+  }
+  .layer-back,
+  .layer-front {
+    display: block;
+    position: absolute;
+    transform-style: preserve-3d;
+  }
+  .layer-back {
+    top: -19%;
+    left: -9%;
+    width: 78%;
+    transform: translateZ(-140px);
+  }
+  .layer-mid {
+    transform: translateZ(0);
+  }
+  .layer-front {
+    bottom: -4%;
+    right: -7%;
+    width: 56%;
+    transform: translateZ(110px);
+  }
+}
+
+@keyframes float {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* The scanner line sweeping the page the tester is reading. */
+@keyframes scan {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--scan-distance, 220px));
+  }
+}
+.scan-line {
+  animation: scan 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+@keyframes flag {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-fail) 18%, transparent);
+  }
+}
+.flag {
+  animation: flag 1.8s ease-in-out infinite;
+}
+
+/* Exploded report: four layers of the deliverable, stacked isometrically. */
+.stack {
+  transform-style: preserve-3d;
+  transform: rotateX(58deg) rotateZ(-36deg);
+}
+.stack-layer {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(calc(var(--i) * 62px));
+}
+
+/* Scroll-driven animations: native, no JS. Browsers without support show the finished state. */
+@supports (animation-timeline: view()) {
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(32px);
+    }
+  }
+  .reveal {
+    animation: reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+  }
+
+  @keyframes draw {
+    from {
+      transform: scaleX(0);
+    }
+  }
+  .steps {
+    view-timeline: --steps block;
+  }
+  .step-fill {
+    animation: draw linear both;
+    animation-timeline: --steps;
+    animation-range: cover 20% cover 45%;
+  }
+  @keyframes step-on {
+    from {
+      background: var(--color-card);
+      color: var(--color-graphite);
+    }
+  }
+  .step-dot {
+    animation: step-on linear both;
+    animation-timeline: --steps;
+    /* Each dot lights up as the line reaches it: dot i sits at i/2 of the line. */
+    animation-range: cover calc(19% + var(--i) * 12.5%) cover calc(21% + var(--i) * 12.5%);
+  }
+
+  @keyframes explode {
+    from {
+      transform: translateZ(calc(var(--i) * 10px));
+    }
+  }
+  .stack-scene {
+    view-timeline: --stack block;
+  }
+  .stack-layer {
+    animation: explode linear both;
+    animation-timeline: --stack;
+    animation-range: entry 20% cover 50%;
+  }
 }
