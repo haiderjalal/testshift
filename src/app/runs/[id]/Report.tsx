@@ -1,6 +1,9 @@
 import Image from "next/image";
 
+import Link from "next/link";
+
 import type { Run, Severity, TestCase } from "@/lib/db";
+import { TRIAL_MINUTES } from "@/lib/plans";
 
 import { PrintButton } from "./RunControls";
 
@@ -83,6 +86,22 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
           </div>
         </div>
       </section>
+
+      {run.is_trial && (
+        <section className="rounded-2xl bg-ink p-7 text-paper print:hidden">
+          <h2 className="text-xl font-semibold">That was your free {TRIAL_MINUTES}-minute shift.</h2>
+          <p className="mt-2 max-w-xl text-paper/70">
+            A longer shift covers more pages, edge cases and mobile checks. Book hours and the tester picks up where it
+            left off on {new URL(run.url).hostname}.
+          </p>
+          <Link
+            href={`/hire?url=${encodeURIComponent(run.url)}&plan=${run.plan}&hours=2`}
+            className="mt-5 inline-block rounded-full bg-marker px-5 py-2.5 font-medium text-ink hover:bg-marker/85"
+          >
+            Book more hours
+          </Link>
+        </section>
+      )}
 
       <section aria-labelledby="bugs-heading">
         <h2 id="bugs-heading" className="text-2xl font-semibold">

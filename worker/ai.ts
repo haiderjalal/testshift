@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { BROWSER_ACTIONS, CATEGORIES, type BrowserAction, type Run, type RunReport, type Severity, type SitePage, type TestCase } from "@/lib/db";
 import { log } from "@/lib/log";
-import { MODEL, PLANS } from "@/lib/plans";
+import { formatDuration, MODEL, PLANS } from "@/lib/plans";
 
 import { clip, describePage, openContext, perform, watchPage } from "./browser";
 
@@ -330,7 +330,7 @@ export async function writeReport({ run, cases }: { run: Run; cases: TestCase[] 
       {
         role: "user",
         content: `Site: ${run.url}
-Plan: ${PLANS[run.plan].name}, ${run.hours}h shift
+Plan: ${PLANS[run.plan].name}, ${formatDuration(run.minutes)} shift${run.is_trial ? " (free trial)" : ""}
 Results: ${by("passed").length} passed, ${by("failed").length} failed, ${by("blocked").length} blocked, ${by("pending").length} not reached.
 
 Failed:

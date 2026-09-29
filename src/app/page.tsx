@@ -2,14 +2,14 @@ import Link from "next/link";
 
 import { SiteHeader } from "@/components/SiteHeader";
 import { UrlForm } from "@/components/UrlForm";
-import { PLANS, SITE, type PlanId } from "@/lib/plans";
+import { PLANS, SITE, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
 
 import { HeroScene } from "./HeroScene";
 import { ReportStack } from "./ReportStack";
 
 const STEPS = [
   { title: "Paste your link", body: "Any public website or web app. No code access, no setup." },
-  { title: "Book the hours", body: "One to eight hours. The tester works for the whole shift you book." },
+  { title: "Book the hours", body: `Start with ${TRIAL_MINUTES} free minutes, then book one to eight hours. The tester works the whole shift.` },
   { title: "Get the report", body: "Every test it ran, what broke, and exactly how to reproduce it." },
 ];
 
@@ -62,7 +62,7 @@ export default function Home() {
               <UrlForm id="hero-url" />
             </div>
             <p className="rise mt-3 pl-1 text-sm text-graphite" style={{ ["--d" as string]: 4 }}>
-              From $30 an hour. Report in your inbox when the shift ends.
+              <span className="font-medium text-pass">First {TRIAL_MINUTES} minutes free.</span> Then from $30 an hour, no card to start.
             </p>
           </div>
           <HeroScene />
@@ -108,7 +108,10 @@ export default function Home() {
 
         <section id="pricing" className="scroll-mt-8 border-t border-rule py-24">
           <h2 className="reveal text-3xl font-semibold tracking-tight sm:text-4xl">Pay for the hours you book</h2>
-          <p className="reveal mt-3 text-graphite">Book one to eight hours. A 3-hour Senior QA shift is $150.</p>
+          <p className="reveal mt-3 text-graphite">
+            Your first {TRIAL_MINUTES}-minute shift is free, so you can see a real report first. After that, book one to eight hours: a
+            3-hour Senior QA shift is $150.
+          </p>
           <div className="mt-10 grid gap-5 md:grid-cols-2">
             {(Object.entries(PLANS) as [PlanId, (typeof PLANS)[PlanId]][]).map(([id, plan]) => (
               <article
@@ -164,7 +167,9 @@ export default function Home() {
           <h2 className="relative max-w-2xl text-4xl leading-tight font-semibold tracking-tight text-balance sm:text-5xl">
             Your next release deserves a <span className="rounded-lg bg-marker px-2 text-ink [box-decoration-break:clone]">second pair of eyes.</span>
           </h2>
-          <p className="relative mt-4 max-w-xl text-paper/70">Book a shift in under a minute. The tester starts as soon as you pay.</p>
+          <p className="relative mt-4 max-w-xl text-paper/70">
+            Your first {TRIAL_MINUTES} minutes are on us. Paste a link and see a real report before you pay anything.
+          </p>
           <UrlForm id="cta-url" className="relative mt-8 [&_button]:bg-marker [&_button]:text-ink [&_button:hover]:bg-marker/85" />
         </section>
       </main>

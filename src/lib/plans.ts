@@ -41,3 +41,12 @@ export const PLANS = {
 export type PlanId = keyof typeof PLANS;
 
 export const HOUR_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
+
+/** Every new customer's first shift is free: once per email address and once per website. */
+export const TRIAL_MINUTES = 20;
+
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = minutes / 60;
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
