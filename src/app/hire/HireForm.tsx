@@ -20,17 +20,17 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 
 interface Props {
   defaultUrl: string;
-  defaultPlan: PlanId;
+  defaultPlan: PlanId | null;
   defaultShift: "trial" | number;
 }
 
 export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
   const [state, formAction, pending] = useActionState<BookingState, FormData>(bookShift, {});
-  const [plan, setPlan] = useState<PlanId>(defaultPlan);
+  const [plan, setPlan] = useState<PlanId | null>(defaultPlan);
   const [shift, setShift] = useState<"trial" | number>(defaultShift);
   const errors = state.errors ?? {};
   const trial = shift === "trial";
-  const total = trial ? 0 : PLANS[plan].rate * shift;
+  const total = trial || !plan ? 0 : PLANS[plan].rate * shift;
   const chip =
     "cursor-pointer rounded-xl border border-rule bg-card py-3 text-center font-mono has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-ink";
 
@@ -64,6 +64,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
 
       <fieldset>
         <legend className="font-medium">Plan</legend>
+        <FieldError id="plan-error" message={errors.plan} />
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {(Object.entries(PLANS) as [PlanId, (typeof PLANS)[PlanId]][]).map(([id, p]) => (
             <label
@@ -182,12 +183,14 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
           disabled={pending}
           className="h-13 w-full rounded-full bg-ink px-6 text-lg font-medium text-paper hover:bg-ink/85 disabled:opacity-60"
         >
-          {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : `Book ${shift}-hour shift · $${total}`}
+          {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : plan ? `Book ${shift}-hour shift · $${total}` : `Book ${shift}-hour shift`}
         </button>
         <p className="mt-3 text-center text-sm text-graphite">
           {trial
             ? "No card needed. One free shift per email address and website."
-            : `${PLANS[plan].name} · ${shift} × $${PLANS[plan].rate}. You'll pay securely with Stripe.`}
+            : plan
+              ? `${PLANS[plan].name} · ${shift} × $${PLANS[plan].rate}. You'll pay securely with Stripe.`
+              : "Choose a plan to see the price."}
         </p>
       </div>
     </form>
