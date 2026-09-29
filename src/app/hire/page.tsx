@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 
 export default async function HirePage({ searchParams }: PageProps<"/hire">) {
   const { url, plan, hours } = await searchParams;
-  const defaultPlan: PlanId = typeof plan === "string" && plan in PLANS ? (plan as PlanId) : "junior";
+  // No plan is preselected unless a pricing link asked for one; customers choose it themselves.
+  const defaultPlan = typeof plan === "string" && plan in PLANS ? (plan as PlanId) : null;
   // ?hours=2 preselects a paid shift (used by the trial report's upsell); otherwise start on the free trial.
   const paidHours = HOUR_OPTIONS.find((h) => String(h) === hours);
 

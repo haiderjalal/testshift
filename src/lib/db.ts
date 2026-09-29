@@ -9,7 +9,13 @@ export function db(): postgres.Sql {
   if (cache.sql) return cache.sql;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
-  cache.sql = postgres(url, { prepare: false });
+  try {
+    cache.sql = postgres(url, { prepare: false });
+  } catch (e) {
+    // postgres.js decodes the password; a raw "%" or similar in it throws an opaque URIError.
+    if (e instanceof URIError) throw new Error("DATABASE_URL is malformed: URL-encode special characters in the password (% → %25).");
+    throw e;
+  }
   return cache.sql;
 }
 
