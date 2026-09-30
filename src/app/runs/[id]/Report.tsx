@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AGENTS, agentById } from "@/lib/agents";
 import type { Run, Severity, TestCase } from "@/lib/db";
 import { TRIAL_MINUTES } from "@/lib/plans";
+import { assessResults } from "@/lib/qa";
 
 import { AgentPipeline } from "./AgentPipeline";
 import { PrintButton } from "./RunControls";
@@ -16,17 +17,6 @@ const STATUS_MARK: Record<TestCase["status"], { glyph: string; label: string; cl
   pending: { glyph: "·", label: "Not reached", className: "text-graphite" },
   running: { glyph: "·", label: "Not reached", className: "text-graphite" },
 };
-
-/** The Prod agent's release call, from the worst failure found: any critical is no-go, any major is caution. */
-function releaseVerdict(bugs: TestCase[]): { label: string; note: string; color: string } {
-  if (bugs.some((b) => b.severity === "critical")) {
-    return { label: "No-go", note: "Critical bugs block this release.", color: "var(--color-fail)" };
-  }
-  if (bugs.some((b) => b.severity === "major")) {
-    return { label: "Go with caution", note: "Major bugs should be fixed before release.", color: "var(--color-marker)" };
-  }
-  return { label: "Go", note: "No critical or major bugs found.", color: "var(--color-pass)" };
-}
 
 function CaseDetails({ c, runId }: { c: TestCase; runId: string }) {
   return (
@@ -65,10 +55,11 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
     .filter((c) => c.status === "failed")
     .sort((a, b) => SEVERITY_ORDER[a.severity ?? "minor"] - SEVERITY_ORDER[b.severity ?? "minor"]);
   const notReached = count("pending") + count("running");
-  const verdict = releaseVerdict(bugs);
+  const assessment = assessResults(cases, run.strategy);
+  const verdict = assessment.verdict;
   const features = run.strategy?.features ?? [];
-  const covered = features.filter((f) => cases.some((c) => c.feature === f.id && c.status !== "pending")).length;
-  const score = report?.score ?? 0;
+  const covered = assessment.coverage.filter((f) => f.covered).length;
+  const score = assessment.score ?? 0;
 
   return (
     <div className="mt-8 space-y-14">
@@ -76,14 +67,14 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
         <div className="flex flex-col items-center gap-3">
           <div
             role="img"
-            aria-label={`Quality score ${score} out of 100`}
+            aria-label={assessment.score === null ? "Insufficient evidence to score" : `Completed-check score ${score} out of 100`}
             className="grid size-36 place-items-center rounded-full"
             style={{
               background: `radial-gradient(closest-side, var(--color-paper) 84%, transparent 85%), conic-gradient(var(--color-dev), var(--color-staging), var(--color-uat) ${score}%, var(--color-rule) 0)`,
             }}
           >
             <span className="text-center">
-              <span className="block font-display text-5xl font-semibold tracking-tight">{report ? score : "–"}</span>
+              <span className="block font-display text-5xl font-semibold tracking-tight">{assessment.score === null ? "–" : score}</span>
               <span className="font-mono text-xs text-graphite">of 100</span>
             </span>
           </div>
@@ -105,9 +96,11 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
           </p>
           {features.length > 0 && (
             <p className="mt-1 font-mono text-xs text-graphite">
-              Coverage: {covered} of {features.length} features tested
+              Coverage: {covered} of {features.length} features have completed checks
             </p>
           )}
+          <p className="mt-2 text-sm text-graphite">The score describes completed checks only. Blocked and untested behavior is not a pass.</p>
+          {assessment.gaps.length > 0 && <details className="mt-3 text-sm text-graphite"><summary className="cursor-pointer">Coverage gaps ({assessment.gaps.length})</summary><ul className="mt-2 list-disc pl-5">{assessment.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul></details>}
           {report?.summary.split(/\n\s*\n/).map((p, i) => (
             <p key={i} className="mt-4 leading-relaxed">
               {p}
@@ -161,7 +154,7 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
           Bugs found <span className="font-mono text-base text-graphite">({bugs.length})</span>
         </h2>
         {bugs.length === 0 ? (
-          <p className="mt-4 text-graphite">No bugs found in this shift. Every test that ran passed or was blocked.</p>
+          <p className="mt-4 text-graphite">No confirmed bugs in the completed checks. Review coverage gaps before making a release decision.</p>
         ) : (
           <ol className="mt-6 space-y-4">
             {bugs.map((c) => {

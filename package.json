@@ -10,7 +10,9 @@
     "worker": "node --env-file-if-exists=.env.local --import tsx worker/index.ts",
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "check": "node --import tsx scripts/selfcheck.ts"
+    "check": "node --import tsx scripts/selfcheck.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",
@@ -22,9 +24,13 @@
     "react-dom": "19.2.8",
     "stripe": "^22.6.2",
     "three": "^0.186.1",
+    "tldts": "^7.4.16",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

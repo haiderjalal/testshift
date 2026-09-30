@@ -4,6 +4,8 @@ A single reference for anyone joining the project, human or AI assistant. It cov
 
 Last updated: 2026-09-30.
 
+Current hardening evidence and release gates: [QA_AUDIT.md](QA_AUDIT.md). Detailed implemented agent workflow and limits: [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md). Historical measurements below are not a new certification of this revision. The new QA-integrity migration has not been applied to production by this audit.
+
 ---
 
 ## 1. The product
@@ -29,7 +31,7 @@ Last updated: 2026-09-30.
 The "unit tests" are **unit-level UI tests** done through the browser, because the tester only has a URL. Real unit tests against source code need a GitHub connection (roadmap). This is stated on the site's FAQ.
 
 **What the customer gets at the end of a shift**
-- A quality score (0–100) and a release verdict: No-go (any critical bug), Go with caution (any major), or Go.
+- A deterministic score over evaluated checks (no score when none ran), and No-go, Incomplete, Go with caution or Go. Coverage gaps cannot be reported as a clean release.
 - A one-line verdict from each agent.
 - Bugs ranked by severity, each tagged with its agent and test type, with steps, expected versus actual, and a screenshot.
 - What works well, a fix-first list, and every test case grouped by agent.
@@ -107,14 +109,14 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 2. **Payment.** The signed webhook (`completed` or `async_payment_succeeded`) or the return page (only for the shift's own session id) calls the idempotent `markRunPaid`.
 3. **Pickup** (`worker/index.ts`).
    - Paid Principal shifts go first, then oldest first; trials never jump the queue.
-   - Each claim gets a fresh `claim_token`. Heartbeats and final writes check it, so a worker that lost its claim stops instead of double-reporting.
+   - Each claim gets a fresh `claim_token`. Heartbeats check it; case/run writes lock and verify ownership transactionally. A lost claim closes the browser.
 4. **Setup.**
    - Map the site: a breadth-first crawl records status, load time, issues and a **compact outline** (only headings, fields, buttons, links and short text).
    - **Test strategy:** one call lists the site's features (F1, F2, …) ranked by risk. All four agents plan against it, and the report shows feature coverage.
 5. **Four agent phases** (windows start after setup, so it never eats an agent's time). For each agent:
    - Automated checks first: accessibility on UAT; smoke, Core Web Vitals and security headers on Prod. Third-party failures (analytics, ads) are noted, never counted as bugs. Login pages (401/403) are "blocked", not "failed".
    - The **planner** writes tests with an executable **script** (Playwright steps and assertions). Batch size scales with the time left, and no planning starts with under 30 seconds to go.
-   - **Script-first execution:** each script runs in a fresh browser with no model call. If it passes, the test passes for free. Only if a step or check fails, or there's no script, does the **investigator** (Claude at low effort, several browser steps per call) decide whether the site is wrong or the step was, and record the verdict.
+   - **Script-first execution:** each script runs in fresh browser storage with no model call. Passing requires browser assertions and no unresolved first-party runtime errors. Failures/no script invoke the bounded investigator. Assertion failures preserve their original trace and require an independent replay before confirmation. Unreproduced failures are inconclusive/blocked.
    - Errors are isolated: a failing test becomes "blocked", a failing planner retries once, and a failing agent doesn't stop the next one.
 6. **Report** (low effort), completion (only if this worker still holds the claim), email.
 7. **Export.** Performed actions become Playwright code, grouped by agent. Comment text is sanitised so nothing in a URL or model output can inject code; page-open-only checks are left out.
@@ -128,7 +130,7 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 - Measured on the same 5-minute Junior shift on TodoMVC: **before**, 22 tests, 69 calls, $0.50; **after**, 53 tests, 29 calls, $0.31. That's 72% cheaper per test.
 
 ### Claude API usage
-- `@anthropic-ai/sdk` via `client.beta.messages.create` / `.parse`, with server-side refusal fallback (`fallbacks: "default"`).
+- `@anthropic-ai/sdk` via `client.beta.messages.create` / `.parse`, with bounded deadlines and output, no automatic SDK retries and no server-side fallback chain. Estimated per-run budgets gate every request; a deterministic report is available without AI.
 - Every response's usage (input, output, cache read, cache write; 1-hour writes billed at 2× input) is saved to `ai_usage` with its cost.
 - Page content and customer notes are data, never instructions. Notes can only set focus areas; they can't loosen the safety rules.
 
@@ -211,7 +213,7 @@ supabase/migrations/        init · free_trial · agents_plans_usage
 **`test_cases`**
 - `agent` (dev | staging | uat | prod; this sets the test type), `seq`, `title`
 - `category` (smoke | functional | e2e | negative | ui | accessibility | performance | security), `priority`, `viewport`
-- `start_url`, `steps`, `expected`, `status`, `actual`, `severity`, `actions` (for the export), `screenshot`, `finished_at`
+- `start_url`, `steps`, `expected`, `status`, `actual`, `severity`, `actions` (for the export), `failure_assertion`, `scripted`, `screenshot`, `finished_at`
 
 **`ai_usage`** (append-only): `run_id`, `agent` (null for the report writer), `purpose` (plan | execute | report), `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `created_at`.
 
@@ -237,7 +239,7 @@ RLS is enabled on all tables with no policies. Only the server's `DATABASE_URL` 
 
 **Supabase project:** `ulvyxohdjkuluhhlecdz` (ap-southeast-1).
 - Pooler: `aws-0-ap-southeast-1.pooler.supabase.com:6543`.
-- All three migrations are applied.
+- Historical deployment state is not authoritative; verify applied migrations. The audit's `20261006000000_qa_integrity.sql` is tested locally but not applied to production.
 - The Supabase connector in Claude Code is linked to a *different* project (`pmbatptoffscqtnfmhbz`, PeptoLogics). Don't use it for TestShift.
 
 ```bash
@@ -291,13 +293,14 @@ npm run lint && npm run typecheck && npm run check && npm run build
   - Requests to private or reserved addresses are aborted. That includes IPv6, NAT64, 6to4, carrier-grade NAT and multicast ranges, with a 30-second DNS cache.
   - Top-level navigation off the booked site is aborted.
   - WebSockets are checked, and service workers are blocked.
-  - Chromium follows redirects without asking our route handler, so **every response's actual server IP is checked**. If anything came from a private address, the browser session is tainted and the tester refuses to read it: no snapshot to Claude, no screenshot, no text.
-  - This was verified with a real redirect to a local "secret" server: without the guard the secret was readable; with it, the read was refused.
-  - **The request itself can still reach the internal server blind**, so production workers must run with network egress limited to the public internet.
+  - A local forward proxy validates DNS and connects to the same public IP, including HTTP and HTTPS CONNECT. Private destinations are refused before contact, protecting against blind redirect/rebinding requests that browser response checks alone cannot prevent.
+  - Response-IP taint checks remain as defense in depth; only the registered loopback proxy endpoint is exempt. A real private sentinel received zero requests in the current regression tests.
+  - Production workers still require a public-only egress firewall and isolated browser containers. This is not an audited OS-level sandbox.
 - **Abuse:**
   - Rate limits on bookings, trials, quote requests and admin sign-in.
   - A global daily trial cap.
   - One trial per mailbox and per domain.
+  - Trial count/insert and rate-limit counters are atomic. Hosted tenants are separated using the public suffix list. Forwarded IP headers are trusted only on Vercel or explicitly configured trusted-proxy deployments.
 - **Payments:** the webhook signature is verified, `markRunPaid` is idempotent, and the return-page check only uses the shift's own session.
 - **Admin:**
   - `ADMIN_PASSWORD` must be at least 16 characters.
@@ -312,7 +315,7 @@ npm run lint && npm run typecheck && npm run check && npm run build
 
 ## 12. Status
 
-**Verified working** (2026-09-30):
+**Historical verification** (2026-09-30; see QA_AUDIT.md for the current revision):
 - The landing page on desktop and mobile. A headless tour confirmed each section drives the 3D camera, WebGL loads and there are no console errors.
 - The live shift page with the agent pipeline, and the report with the verdict, agent notes and grouped cases.
 - The Playwright export grouped by agent.

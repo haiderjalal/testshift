@@ -157,7 +157,8 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
           rows={3}
           maxLength={2000}
           placeholder="e.g. We just redesigned checkout. Don't submit the contact form, it emails our CEO."
-          aria-describedby="notes-hint"
+          aria-invalid={Boolean(errors.notes)}
+          aria-describedby={errors.notes ? "notes-hint notes-error" : "notes-hint"}
           className={input}
         />
         <p id="notes-hint" className="mt-2 text-sm text-graphite">

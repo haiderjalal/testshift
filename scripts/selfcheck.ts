@@ -24,6 +24,7 @@ async function main(): Promise<void> {
     status: "failed",
     actual: "Nothing happens",
     severity: "major",
+    failure_assertion: { action: "expect_text", value: "Buy milk" },
     actions: [
       { action: "goto", value: "https://demo.playwright.dev/todomvc/" },
       { action: "fill", selector: 'role=textbox[name="What needs to be done?"]', value: "Buy milk" },

@@ -26,7 +26,7 @@ export function AgentPipeline({ cases, phase }: { cases: TestCase[]; phase: Pipe
                 style={{ background: agent.color, color: agent.color }}
               />
               <span style={{ color: agent.color }}>{agent.name}</span>
-              <span className="ml-auto text-graphite">{state === "done" ? "done" : state === "active" ? "on duty" : "waiting"}</span>
+              <span className="ml-auto text-graphite">{state === "done" ? (own.some((c) => c.status === "passed" || c.status === "failed") ? "done" : "unverified") : state === "active" ? "on duty" : "waiting"}</span>
             </p>
             <p className="mt-2 text-sm text-graphite">{agent.testType}</p>
             <p className="mt-3 font-mono text-sm">

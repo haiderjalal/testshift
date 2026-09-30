@@ -10,8 +10,10 @@ export function db(): postgres.Sql {
   if (cache.sql) return cache.sql;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
+  const max = Number(process.env.DATABASE_POOL_SIZE ?? 5);
+  if (!Number.isInteger(max) || max < 1 || max > 20) throw new Error("Invalid DATABASE_POOL_SIZE");
   try {
-    cache.sql = postgres(url, { prepare: false });
+    cache.sql = postgres(url, { prepare: false, max, connect_timeout: 10, idle_timeout: 20, connection: { statement_timeout: 15_000 } });
   } catch (e) {
     // postgres.js decodes the password; a raw "%" or similar in it throws an opaque URIError.
     if (e instanceof URIError) throw new Error("DATABASE_URL is malformed: URL-encode special characters in the password (% → %25).");
@@ -70,6 +72,7 @@ export interface Run {
   report: RunReport | null;
   error: string | null;
   started_at: Date | null;
+  testing_started_at?: Date | null;
   deadline_at: Date | null;
   completed_at: Date | null;
   created_at: Date;
@@ -90,6 +93,10 @@ export const BROWSER_ACTIONS = [
   "expect_url",
   "expect_hidden",
   "expect_value",
+  "expect_valid",
+  "expect_enabled",
+  "expect_checked",
+  "expect_count",
 ] as const;
 
 /** Actions that check something rather than do something; a script must contain at least one to count as a test. */
@@ -99,6 +106,10 @@ export const ASSERTIONS: readonly BrowserAction["action"][] = [
   "expect_url",
   "expect_hidden",
   "expect_value",
+  "expect_valid",
+  "expect_enabled",
+  "expect_checked",
+  "expect_count",
 ];
 
 export interface BrowserAction {
@@ -141,6 +152,8 @@ export interface TestCase {
   script: BrowserAction[];
   /** Browser steps actually performed; exported as Playwright code. */
   actions: BrowserAction[];
+  failure_assertion?: BrowserAction | null;
+  scripted?: boolean;
   has_screenshot: boolean;
   finished_at: Date | null;
 }

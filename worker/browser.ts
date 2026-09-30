@@ -3,6 +3,7 @@ import { devices, type Browser, type BrowserContext, type Page } from "playwrigh
 
 import type { BrowserAction, SitePage } from "@/lib/db";
 import { isPrivateIp, isPublicHost, siteKey } from "@/lib/net";
+import { exactTextPattern, scopedUrl, urlMatches, validateAction } from "@/lib/qa";
 
 declare global {
   interface Window {
@@ -20,6 +21,7 @@ function hostAllowed(hostname: string): Promise<boolean> {
   const cached = hostChecks.get(hostname);
   if (cached && Date.now() - cached.at < HOST_CHECK_TTL_MS) return cached.check;
   const check = isPublicHost(hostname);
+  if (hostChecks.size >= 1_000) hostChecks.delete(hostChecks.keys().next().value!);
   hostChecks.set(hostname, { at: Date.now(), check });
   return check;
 }
@@ -33,15 +35,28 @@ export class PrivateNetworkError extends Error {
 
 // Per context: did any response come from a private IP? Checked against the address Chromium actually
 // connected to, which covers redirects (not seen by route handlers) and DNS rebinding.
-const guards = new WeakMap<BrowserContext, { tainted: boolean; pending: Promise<void>[] }>();
+const guards = new WeakMap<BrowserContext, { tainted: boolean; pending: Set<Promise<void>>; origin: string; blocked: string | null }>();
+const egressProxies = new WeakMap<Browser, { ip: string; port: number }>();
+/** Only called for a browser launched through our DNS-pinning proxy. */
+export function registerEgressBrowser(browser: Browser, proxyUrl: string): void {
+  const proxy = new URL(proxyUrl);
+  egressProxies.set(browser, { ip: proxy.hostname, port: Number(proxy.port) });
+}
+
+function closeAt(context: BrowserContext, until: number): ReturnType<typeof setTimeout> {
+  return setTimeout(() => { void context.close().catch(() => undefined); }, Math.max(1, until - Date.now()));
+}
 
 /** Throws PrivateNetworkError if anything in this page's context came from a private address. */
 export async function assertReadable(page: Page): Promise<void> {
   const guard = guards.get(page.context());
   if (!guard) return;
-  await Promise.all(guard.pending.splice(0));
+  await Promise.all([...guard.pending]);
   if (guard.tainted) throw new PrivateNetworkError();
+  if (guard.blocked) throw new BrowserPolicyError(guard.blocked);
+  if (!scopedUrl(page.url(), guard.origin)) throw new BrowserPolicyError("Navigation left the booked origin.");
 }
+export class BrowserPolicyError extends Error {}
 const SKIP_LINK = /\.(pdf|zip|jpe?g|png|gif|svg|webp|mp4|mp3|dmg|exe)$/i;
 
 export const clip = (text: string, max: number): string =>
@@ -52,7 +67,7 @@ const KEEP_LINE =
   /^\s*- (heading|link|button|textbox|searchbox|checkbox|radio|combobox|listbox|option|switch|slider|spinbutton|tab|menuitem|dialog|alert|status|img|form|paragraph|text|cell|columnheader|\/url)\b/;
 const MAX_TEXT_LINE = 90;
 
-/** Shrinks an accessibility snapshot to its testable lines: roughly a third of the tokens, nothing a test needs lost. */
+/** Bounded accessibility evidence for planning; omitted content remains a coverage limitation. */
 export function compactOutline(tree: string, max = 3_000): string {
   const lines = tree
     .split("\n")
@@ -60,19 +75,36 @@ export function compactOutline(tree: string, max = 3_000): string {
     .map((line) => {
       const depth = Math.floor((line.length - line.trimStart().length) / 2);
       const body = line.trim();
-      return `${" ".repeat(Math.min(depth, 4))}${body.length > MAX_TEXT_LINE ? `${body.slice(0, MAX_TEXT_LINE)}…` : body}`;
+      // Never truncate actionable names: the planner copies them into exact selectors.
+      const prose = /^- (paragraph|text)\b/.test(body);
+      return `${" ".repeat(Math.min(depth, 4))}${prose && body.length > MAX_TEXT_LINE ? `${body.slice(0, MAX_TEXT_LINE)}…` : body}`;
     });
   return clip(lines.join("\n"), max);
 }
 
+/** Native constraints are often missing from an accessibility tree but define useful boundary tests. */
+export async function formConstraints(page: Page): Promise<string> {
+  await assertReadable(page);
+  const fields = await page.locator("input:not([type=hidden]),textarea,select").evaluateAll((elements) => elements.slice(0, 40).map((element) => {
+    const field = element as HTMLInputElement;
+    const attrs: Record<string, string> = {};
+    for (const key of ["type", "required", "min", "max", "minlength", "maxlength", "pattern", "disabled", "readonly", "autocomplete"]) {
+      const value = field.getAttribute(key);
+      if (value !== null) attrs[key] = value.slice(0, 120);
+    }
+    return { label: [...(field.labels ?? [])].map((l) => l.textContent?.trim()).join(" ").slice(0, 120), id: field.id.slice(0, 120), ...attrs };
+  })).catch(() => []);
+  return fields.length ? `Observed field constraints: ${JSON.stringify(fields)}` : "";
+}
+
 /**
- * Site map for the model. Lines that appear on most pages (header, nav, footer) are listed once under
+ * Site map for the model. Lines that appear on every page (header, nav, footer) are listed once under
  * "On every page" instead of being repeated per page, which is often the largest saving on real sites.
  */
 export function formatSiteMap(pages: SitePage[]): string {
   const counts = new Map<string, number>();
   for (const p of pages) for (const line of new Set(p.outline.split("\n"))) counts.set(line, (counts.get(line) ?? 0) + 1);
-  const shared = pages.length >= 3 ? new Set([...counts].filter(([, n]) => n >= pages.length * 0.6).map(([l]) => l)) : new Set();
+  const shared = pages.length >= 3 ? new Set([...counts].filter(([line, n]) => line.trim() && n === pages.length).map(([l]) => l)) : new Set();
   const sections = pages.map((p) => {
     const own = p.outline.split("\n").filter((l) => !shared.has(l)).join("\n");
     const issues = p.issues.length ? `\nIssues seen: ${p.issues.slice(0, 3).join("; ")}` : "";
@@ -90,32 +122,40 @@ export function formatSiteMap(pages: SitePage[]): string {
  * - any response served from a private IP taints the context, and assertReadable() then refuses to read it.
  */
 export async function openContext(browser: Browser, viewport: "desktop" | "mobile", siteUrl: string): Promise<BrowserContext> {
-  const site = siteKey(new URL(siteUrl).hostname);
+  const origin = new URL(siteUrl).origin;
   const context = await browser.newContext({
     ...(viewport === "mobile" ? devices["Pixel 7"] : { viewport: { width: 1280, height: 800 } }),
     serviceWorkers: "block",
+    acceptDownloads: false,
   });
   context.setDefaultTimeout(10_000);
   context.setDefaultNavigationTimeout(30_000);
 
-  const guard = { tainted: false, pending: [] as Promise<void>[] };
+  const guard = { tainted: false, pending: new Set<Promise<void>>(), origin, blocked: null as string | null };
   guards.set(context, guard);
   context.on("response", (response) => {
-    guard.pending.push(
-      response
+    if (response.headers()["x-testshift-network-blocked"] === "1") guard.blocked = "The browser network policy refused this destination.";
+    const pending = response
         .serverAddr()
         .then((addr) => {
-          if (addr && isPrivateIp(addr.ipAddress)) guard.tainted = true;
+          const proxy = egressProxies.get(browser);
+          if (addr && isPrivateIp(addr.ipAddress) && !(proxy && addr.ipAddress === proxy.ip && addr.port === proxy.port)) guard.tainted = true;
         })
-        .catch(() => undefined),
-    );
+        .catch(() => undefined);
+    guard.pending.add(pending);
+    void pending.finally(() => guard.pending.delete(pending));
   });
 
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { hostname, protocol } = new URL(request.url());
-    if (protocol !== "http:" && protocol !== "https:") return route.continue();
-    if (request.isNavigationRequest() && !request.frame().parentFrame() && siteKey(hostname) !== site) {
+    if (protocol !== "http:" && protocol !== "https:") return route.abort("blockedbyclient");
+    if (request.isNavigationRequest() && !request.frame().parentFrame() && !scopedUrl(request.url(), origin)) {
+      guard.blocked = "The site navigated outside the booked origin; that destination is out of scope.";
+      return route.abort("blockedbyclient");
+    }
+    if (request.method() === "DELETE") {
+      guard.blocked = "A destructive DELETE request was blocked by the testing policy.";
       return route.abort("blockedbyclient");
     }
     return (await hostAllowed(hostname)) ? route.continue() : route.abort("blockedbyclient");
@@ -138,6 +178,7 @@ export const THIRD_PARTY = "[third-party] ";
 export function watchPage(page: Page, siteUrl: string): { drain: () => string[] } {
   const site = siteKey(new URL(siteUrl).hostname);
   const events: string[] = [];
+  const add = (event: string) => { if (events.length < 100 && !events.includes(event)) events.push(event); };
   const tag = (url: string) => {
     try {
       return siteKey(new URL(url).hostname) === site ? "" : THIRD_PARTY;
@@ -148,17 +189,17 @@ export function watchPage(page: Page, siteUrl: string): { drain: () => string[] 
   page.on("console", (m) => {
     // Chrome also logs a console error for every request the tester blocked; those aren't the site's fault.
     if (m.type() === "error" && !m.text().includes("ERR_BLOCKED_BY_CLIENT")) {
-      events.push(`console error: ${m.text().slice(0, 300)}`);
+      add(`${m.location().url ? tag(m.location().url) : ""}console error: ${m.text().slice(0, 300)}`);
     }
   });
-  page.on("pageerror", (e) => events.push(`uncaught exception: ${e.message.slice(0, 300)}`));
+  page.on("pageerror", (e) => add(`uncaught exception: ${e.message.slice(0, 300)}`));
   page.on("response", (r) => {
-    if (r.status() >= 400) events.push(`${tag(r.url())}HTTP ${r.status()} ${r.url().slice(0, 200)}`);
+    if (r.status() >= 400) add(`${tag(r.url())}HTTP ${r.status()} ${r.url().slice(0, 200)}`);
   });
   page.on("requestfailed", (r) => {
     const reason = r.failure()?.errorText ?? "failed";
     if (reason === "net::ERR_ABORTED" || reason.startsWith("net::ERR_BLOCKED_BY_CLIENT")) return;
-    events.push(`${tag(r.url())}request failed (${reason}): ${r.url().slice(0, 200)}`);
+    add(`${tag(r.url())}request failed (${reason}): ${r.url().slice(0, 200)}`);
   });
   return { drain: () => events.splice(0) };
 }
@@ -190,7 +231,12 @@ export async function describePage(page: Page, events: string[]): Promise<string
     .join("\n");
 }
 
-export async function perform(page: Page, { action, selector, value = "" }: BrowserAction): Promise<void> {
+export async function perform(page: Page, step: BrowserAction): Promise<void> {
+  validateAction(step);
+  const { action, selector, value = "" } = step;
+  const guard = guards.get(page.context());
+  if (guard && page.url() !== "about:blank") await assertReadable(page);
+  if (action === "goto" && guard && !scopedUrl(value, guard.origin)) throw new BrowserPolicyError("Navigation must stay on the booked origin.");
   const target = () => {
     if (!selector) throw new Error(`"${action}" needs a selector`);
     return page.locator(selector);
@@ -227,16 +273,35 @@ export async function perform(page: Page, { action, selector, value = "" }: Brow
       await target().waitFor({ state: "visible", timeout: 5_000 });
       break;
     case "expect_text":
-      await (selector ? target().filter({ hasText: value }) : page.getByText(value))
-        .first()
+      await (selector ? target().filter({ hasText: new RegExp(exactTextPattern(value)) }) : page.getByText(value, { exact: true }))
         .waitFor({ state: "visible", timeout: 5_000 });
       break;
     case "expect_url":
-      await page.waitForURL((u) => u.href.includes(value), { timeout: 5_000 });
+      await page.waitForURL((u) => urlMatches(u.href, value), { timeout: 5_000 });
       break;
     case "expect_hidden":
-      await (selector ? target() : page.getByText(value)).first().waitFor({ state: "hidden", timeout: 5_000 });
+      await (selector ? target() : page.getByText(value, { exact: true })).waitFor({ state: "hidden", timeout: 5_000 });
       break;
+    case "expect_valid":
+    case "expect_enabled":
+    case "expect_checked":
+    case "expect_count": {
+      const field = target();
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const actual = action === "expect_count" ? await field.count()
+          : action === "expect_enabled" ? await field.isEnabled()
+            : action === "expect_checked" ? await field.isChecked()
+              : await field.evaluate((element) => {
+                if (!element.matches("input,textarea,select,form")) throw new Error("Validity checks require a form control or form");
+                return element.matches(":valid");
+              });
+        if (actual === (action === "expect_count" ? Number(value) : value === "true")) break;
+        if (Date.now() >= deadline) throw new Error(`${action}: expected ${value}, observed ${actual}`);
+        await page.waitForTimeout(100);
+      }
+      break;
+    }
     case "expect_value": {
       const field = target();
       const deadline = Date.now() + 5_000;
@@ -251,13 +316,15 @@ export async function perform(page: Page, { action, selector, value = "" }: Brow
   }
   // Let any navigation the action triggered settle before the next snapshot.
   await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
+  await assertReadable(page);
 }
 
-function normalizeLink(href: string, origin: string): string | null {
+export function normalizeLink(href: string, origin: string): string | null {
   try {
     const u = new URL(href);
-    u.hash = "";
-    return u.origin === origin && !SKIP_LINK.test(u.pathname) ? u.href : null;
+    if (!/^#(?:\/|!)/.test(u.hash)) u.hash = "";
+    for (const key of [...u.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$)/i.test(key)) u.searchParams.delete(key);
+    return scopedUrl(u.href, origin) && !SKIP_LINK.test(u.pathname) ? u.href : null;
   } catch {
     return null;
   }
@@ -301,6 +368,7 @@ export async function crawlSite(
   const seen = new Set(queue);
   const pages: SitePage[] = [];
   const context = await openContext(browser, "desktop", startUrl);
+  const deadline = closeAt(context, until);
   const page = await context.newPage();
   const { drain } = watchPage(page, startUrl);
 
@@ -315,15 +383,19 @@ export async function crawlSite(
         pages.push({ url, title: "", status, loadMs, outline: "", issues: [e.message] });
         break;
       }
-      const links = await page.$$eval("a[href]", (as) => as.map((a) => (a as HTMLAnchorElement).href)).catch(() => []);
+      if (status === 0 || [401, 403, 429].includes(status)) {
+        pages.push({ url, title: "", status, loadMs, outline: "", issues: [...issues, ...drain()] });
+        continue;
+      }
+      const links = await page.$$eval("a[href]", (as) => as.slice(0, 500).map((a) => (a as HTMLAnchorElement).href)).catch(() => []);
       for (const link of links) {
         const next = normalizeLink(link, origin);
-        if (next && !seen.has(next)) {
+        if (next && !seen.has(next) && seen.size < 500) {
           seen.add(next);
           queue.push(next);
         }
       }
-      const outline = compactOutline(await page.locator("body").ariaSnapshot({ timeout: 5_000 }).catch(() => ""));
+      const outline = [compactOutline(await page.locator("body").ariaSnapshot({ timeout: 5_000 }).catch(() => "")), await formConstraints(page)].filter(Boolean).join("\n");
       pages.push({
         url,
         title: await page.title().catch(() => ""),
@@ -334,7 +406,8 @@ export async function crawlSite(
       });
     }
   } finally {
-    await context.close();
+    clearTimeout(deadline);
+    await context.close().catch(() => undefined);
   }
   return pages;
 }
@@ -354,10 +427,14 @@ export async function auditPages(
   { vitals, until }: { vitals: boolean; until: number },
 ): Promise<PageAudit[]> {
   const context = await openContext(browser, "desktop", siteUrl);
+  const deadline = closeAt(context, until);
   if (vitals) {
     await context.addInitScript(() => {
       window.__vitals = { lcp: null, cls: 0 };
       const record = window.__vitals;
+      let sessionStart = 0;
+      let sessionLast = 0;
+      let sessionValue = 0;
       try {
         new PerformanceObserver((list) => {
           const last = list.getEntries().at(-1);
@@ -365,7 +442,11 @@ export async function auditPages(
         }).observe({ type: "largest-contentful-paint", buffered: true });
         new PerformanceObserver((list) => {
           for (const e of list.getEntries() as (PerformanceEntry & { hadRecentInput: boolean; value: number })[]) {
-            if (!e.hadRecentInput) record.cls += e.value;
+            if (e.hadRecentInput) continue;
+            if (sessionValue && e.startTime - sessionLast < 1_000 && e.startTime - sessionStart < 5_000) sessionValue += e.value;
+            else { sessionStart = e.startTime; sessionValue = e.value; }
+            sessionLast = e.startTime;
+            record.cls = Math.max(record.cls, sessionValue);
           }
         }).observe({ type: "layout-shift", buffered: true });
       } catch {
@@ -393,13 +474,15 @@ export async function auditPages(
       });
     }
   } finally {
-    await context.close();
+    clearTimeout(deadline);
+    await context.close().catch(() => undefined);
   }
   return audits;
 }
 
 export interface AccessibilityResult {
   url: string;
+  blocked?: string;
   violations: { id: string; impact: string | null; help: string; count: number }[];
 }
 
@@ -411,12 +494,17 @@ export async function accessibilityAudit(
   until: number,
 ): Promise<AccessibilityResult[]> {
   const context = await openContext(browser, "desktop", siteUrl);
+  const deadline = closeAt(context, until);
   const page = await context.newPage();
   const results: AccessibilityResult[] = [];
   try {
     for (const url of urls) {
       if (Date.now() > until) break;
-      await visit(page, url);
+      const visitResult = await visit(page, url);
+      if (visitResult.status < 200 || visitResult.status >= 400) {
+        results.push({ url, violations: [], blocked: `HTTP ${visitResult.status || "no response"}: the intended page could not be audited.` });
+        continue;
+      }
       try {
         await assertReadable(page);
         // page.evaluate is not subject to the site's CSP, unlike injecting a <script> tag.
@@ -430,13 +518,15 @@ export async function accessibilityAudit(
         });
         results.push({ url, violations });
       } catch (e) {
-        if (e instanceof PrivateNetworkError) break;
+        results.push({ url, violations: [], blocked: "The automated accessibility audit could not finish on this page." });
+        if (e instanceof PrivateNetworkError || e instanceof BrowserPolicyError) break;
         // Usually the page navigated mid-audit (redirect, consent wall); skip it rather than end the shift.
         continue;
       }
     }
   } finally {
-    await context.close();
+    clearTimeout(deadline);
+    await context.close().catch(() => undefined);
   }
   return results;
 }
