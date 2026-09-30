@@ -7,10 +7,13 @@ import { errorMessage, log } from "@/lib/log";
 import { PLANS } from "@/lib/plans";
 
 import { executeCase, planTests, writeReport, writeStrategy, type CaseDraft } from "./ai";
-import { accessibilityAudit, auditPages, crawlSite, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
+import { accessibilityAudit, auditPages, crawlSite, registerEgressBrowser, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
+import { AiBudget, BudgetExceededError, DeadlineError, budgetLimit, endBudget, startBudget } from "./budget";
+import { startEgressProxy } from "./egress";
+import { LeaseLostError, withRunLease } from "./lease";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
-const MINUTES_PER_HOUR = Number(process.env.SHIFT_MINUTES_PER_HOUR ?? 60);
+const MINUTES_PER_HOUR = process.env.NODE_ENV === "production" ? 60 : Number(process.env.SHIFT_MINUTES_PER_HOUR ?? 60);
 const IDLE_POLL_MS = 5_000;
 const HEARTBEAT_MS = 30_000;
 const MAX_CRAWL_PAGES = 25;
@@ -29,7 +32,7 @@ const MAX_BATCH = 12;
 type Draft = CaseDraft & Partial<Pick<TestCase, "status" | "actual" | "severity">>;
 
 const caseColumns = () => db()`id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected,
-  status, actual, severity, script, actions, screenshot is not null as has_screenshot, finished_at`;
+  status, actual, severity, script, actions, failure_assertion, scripted, screenshot is not null as has_screenshot, finished_at`;
 
 /**
  * This worker's claim on the shift it is running. A fresh token is written at claim time; if another worker
@@ -37,12 +40,6 @@ const caseColumns = () => db()`id, seq, agent, feature, title, category, priorit
  * and this worker stops instead of racing the new owner and sending a second report.
  */
 const lease = { token: "", lost: false };
-
-class LeaseLostError extends Error {
-  constructor() {
-    super("Another worker took over this shift");
-  }
-}
 
 /** Claims the next run: paid Principal shifts first, then oldest first. Also re-claims runs whose worker went silent. */
 async function claimRun(): Promise<Run | null> {
@@ -80,9 +77,11 @@ async function planWithRetry(input: Parameters<typeof planTests>[0]): Promise<Ca
     try {
       return await planTests(input);
     } catch (e) {
+      if (e instanceof BudgetExceededError || e instanceof DeadlineError || Date.now() >= (input.stopAt ?? Infinity)) return [];
       log("warn", "Planning failed", { runId: input.run.id, agent: input.agent.id, attempt, error: errorMessage(e) });
       if (attempt >= 2) return [];
-      await new Promise((resolve) => setTimeout(resolve, 15_000));
+      if (Date.now() + 3_000 >= (input.stopAt ?? Infinity)) return [];
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
     }
   }
 }
@@ -92,7 +91,8 @@ const listCases = (runId: string) =>
 
 async function insertCases(runId: string, agent: AgentId, drafts: Draft[]): Promise<void> {
   if (drafts.length === 0) return;
-  const [{ next }] = await db()<{ next: number }[]>`
+  await withRunLease(runId, lease.token, async (sql) => {
+  const [{ next }] = await sql<{ next: number }[]>`
     select coalesce(max(seq), 0) + 1 as next from test_cases where run_id = ${runId}`;
   const rows = drafts.map((d, i) => ({
     run_id: runId,
@@ -113,7 +113,8 @@ async function insertCases(runId: string, agent: AgentId, drafts: Draft[]): Prom
     actions: json(d.status ? [{ action: "goto", value: d.start_url }] : []),
     finished_at: d.status ? new Date() : null,
   }));
-  await db()`insert into test_cases ${db()(rows)}`;
+  await sql`insert into test_cases ${sql(rows)}`;
+  });
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { minor: 1, major: 2, critical: 3 };
@@ -127,7 +128,7 @@ const pathOf = (url: string) => new URL(url).pathname;
  */
 function smokeCase(page: Pick<SitePage, "url" | "status" | "loadMs" | "issues">): Draft {
   const { own, thirdParty } = splitIssues(page.issues);
-  if (page.status === 401 || page.status === 403) {
+  if (page.status === 401 || page.status === 403 || page.status === 429) {
     return {
       feature: null,
       script: [],
@@ -139,14 +140,14 @@ function smokeCase(page: Pick<SitePage, "url" | "status" | "loadMs" | "issues">)
       steps: [`Open ${page.url}`],
       expected: "The page returns HTTP 2xx within 5 seconds with no console errors or failed requests.",
       status: "blocked",
-      actual: `The page asks for a login (HTTP ${page.status}), which is out of scope for this shift.`,
+      actual: `HTTP ${page.status}: access or rate limiting prevented testing this page.`,
       severity: null,
     };
   }
   const problems = [
     ...(page.status === 0 || page.status >= 400 ? [`HTTP ${page.status || "no response"}`] : []),
     ...(page.loadMs > SLOW_PAGE_MS ? [`slow load (${(page.loadMs / 1000).toFixed(1)}s)`] : []),
-    ...own.filter((issue) => !issue.includes(page.url)), // the page's own status is already reported above
+    ...own.filter((issue) => issue !== `HTTP ${page.status} ${page.url}`),
   ];
   const note = thirdParty.length ? ` Third-party services failed ${thirdParty.length} request(s), not counted.` : "";
   const severity: Severity | null =
@@ -169,6 +170,7 @@ function smokeCase(page: Pick<SitePage, "url" | "status" | "loadMs" | "issues">)
 
 /** Prod performance check per page against Core Web Vitals thresholds (Lead and Principal plans). */
 function performanceCase(a: PageAudit): Draft | null {
+  if (a.status < 200 || a.status >= 400) return null;
   if (a.lcpMs === null && a.cls === null) return null;
   let severity: Severity | null = null;
   const problems: string[] = [];
@@ -240,13 +242,13 @@ function accessibilityCase(r: AccessibilityResult): Draft {
     start_url: r.url,
     steps: [`Open ${r.url}`, "Run the WCAG 2 A and AA automated rules"],
     expected: "No WCAG 2 A/AA violations.",
-    status: r.violations.length ? "failed" : "passed",
-    actual: r.violations.length
+    status: r.blocked ? "blocked" : r.violations.length ? "failed" : "passed",
+    actual: r.blocked ?? (r.violations.length
       ? r.violations
           .slice(0, 6)
           .map((v) => `${v.help} (${v.count}×, ${v.impact ?? "unknown"})`)
           .join("; ")
-      : "No violations found by the automated audit.",
+      : "No violations found by the automated audit."),
     severity: serious ? "major" : r.violations.length ? "minor" : null,
   };
 }
@@ -288,7 +290,7 @@ async function runPhase(
   const { agent } = window;
   await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt));
 
-  while (Date.now() < window.to) {
+  while (Date.now() < Math.min(window.to, stopAt) && !lease.lost) {
     const [next] = await db()<TestCase[]>`
       select ${caseColumns()} from test_cases
       where run_id = ${run.id} and agent = ${agent.id} and status = 'pending'
@@ -300,36 +302,37 @@ async function runPhase(
       const minutesLeft = (window.to - Date.now()) / 60_000;
       if (minutesLeft < 0.5) return; // too little time to run a new batch; don't pay to plan tests nobody runs
       const count = Math.round(Math.min(MAX_BATCH, Math.max(MIN_BATCH, minutesLeft * CASES_PER_MINUTE)));
-      const drafts = await planWithRetry({ run, agent, pages, strategy, existing: await listCases(run.id), count });
+      const drafts = await planWithRetry({ run, agent, pages, strategy, existing: await listCases(run.id), count, stopAt: Math.min(window.to, stopAt) });
       if (drafts.length === 0) return; // nothing left to test: the next agent starts early
       await insertCases(run.id, agent.id, drafts);
       continue;
     }
 
     await setActivity(run.id, agent.id, `${agent.name} · Testing: ${next.title}`);
-    await db()`update test_cases set status = 'running' where id = ${next.id}`;
-    const r = await executeCase({ browser, run, testCase: next, stopAt });
+    await withRunLease(run.id, lease.token, async (sql) => { await sql`update test_cases set status = 'running' where id = ${next.id}`; });
+    const r = await executeCase({ browser, run, testCase: next, stopAt: Math.min(window.to, stopAt, Date.now() + 120_000) });
     if (!r) {
       // The shift ended mid-test: leave it as "not reached" rather than a false result.
-      await db()`update test_cases set status = 'pending' where id = ${next.id}`;
+      await withRunLease(run.id, lease.token, async (sql) => { await sql`update test_cases set status = 'pending' where id = ${next.id}`; });
       return;
     }
-    await db()`
+    await withRunLease(run.id, lease.token, async (sql) => { await sql`
       update test_cases set
         status = ${r.status},
         actual = ${r.actual},
         severity = ${r.severity},
         actions = ${json(r.actions)},
+        failure_assertion = ${r.failedAssertion ? json(r.failedAssertion) : null},
+        scripted = ${r.scripted},
         screenshot = ${r.screenshot},
         finished_at = now()
-      where id = ${next.id}`;
+      where id = ${next.id}`; });
   }
 }
 
 /** The whole pipeline: map the site, then Dev → Staging → UAT → Prod, each in its share of the shift. */
 async function runShift(run: Run, browser: Browser, stopAt: number): Promise<void> {
   const start = run.started_at?.getTime() ?? Date.now();
-  const fresh = !run.site_map;
 
   let pages = run.site_map;
   if (!pages) {
@@ -338,25 +341,29 @@ async function runShift(run: Run, browser: Browser, stopAt: number): Promise<voi
       maxPages: run.is_trial ? MAX_TRIAL_CRAWL_PAGES : MAX_CRAWL_PAGES,
       until: Date.now() + (stopAt - start) * 0.12,
     });
-    await db()`update runs set site_map = ${json(pages)} where id = ${run.id}`;
+    await withRunLease(run.id, lease.token, async (sql) => { await sql`update runs set site_map = ${json(pages!)} where id = ${run.id}`; });
   }
   let strategy = run.strategy;
   if (!strategy) {
     await setActivity(run.id, "dev", "Dev agent · Writing the test strategy");
     try {
-      strategy = await writeStrategy(run, pages);
-      await db()`update runs set strategy = ${json(strategy)} where id = ${run.id}`;
+      strategy = await writeStrategy(run, pages, stopAt);
+      await withRunLease(run.id, lease.token, async (sql) => { await sql`update runs set strategy = ${json(strategy!)} where id = ${run.id}`; });
     } catch (e) {
       // Planning still works without a strategy, just with less coverage tracking.
       log("error", "Strategy failed", { runId: run.id, error: errorMessage(e) });
     }
   }
   // A crashed worker may have left a case half-run.
-  await db()`update test_cases set status = 'pending' where run_id = ${run.id} and status = 'running'`;
+  await withRunLease(run.id, lease.token, async (sql) => { await sql`update test_cases set status = 'pending' where run_id = ${run.id} and status = 'running'`; });
 
   // Agents share the time left after mapping and strategy, so setup never eats one agent's slot.
   // A resumed shift keeps its original windows (measured from the shift start).
-  const windows = agentWindows(fresh ? Date.now() : start, stopAt);
+  const testingStart = await withRunLease(run.id, lease.token, async (sql) => {
+    const [saved] = await sql<{ testing_started_at: Date }[]>`update runs set testing_started_at = coalesce(testing_started_at, now()) where id = ${run.id} returning testing_started_at`;
+    return saved.testing_started_at.getTime();
+  });
+  const windows = agentWindows(testingStart, stopAt);
   for (const window of windows) {
     if (Date.now() >= window.to) continue; // phase already over (resumed run); Prod's window ends at stopAt
     try {
@@ -376,15 +383,23 @@ async function processRun(run: Run): Promise<void> {
   const heartbeat = setInterval(() => {
     db()`update runs set heartbeat_at = now() where id = ${run.id} and claim_token = ${lease.token} returning id`
       .then((rows) => {
-        if (rows.length === 0) lease.lost = true;
+        if (rows.length === 0) {
+          lease.lost = true;
+          void browser?.close().catch(() => undefined);
+        }
       })
       .catch((e) => log("warn", "Heartbeat failed", { runId: run.id, error: errorMessage(e) }));
   }, HEARTBEAT_MS);
   let browser: Browser | null = null;
+  let proxy: Awaited<ReturnType<typeof startEgressProxy>> | null = null;
   log("info", "Shift started", { runId: run.id, plan: run.plan, minutes: run.minutes, trial: run.is_trial });
 
   try {
-    browser = await chromium.launch();
+    const [{ spent }] = await db()<{ spent: number }[]>`select coalesce(sum(cost_usd), 0)::float8 as spent from ai_usage where run_id = ${run.id}`;
+    startBudget(run.id, new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial), spent));
+    proxy = await startEgressProxy();
+    browser = await chromium.launch({ proxy: { server: proxy.server }, args: ["--proxy-bypass-list=<-loopback>", "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
+    registerEgressBrowser(browser, proxy.server);
     try {
       await runShift(run, browser, stopAt);
     } catch (e) {
@@ -395,7 +410,7 @@ async function processRun(run: Run): Promise<void> {
     await setActivity(run.id, "prod", "Writing your report");
     const cases = await listCases(run.id);
     const [latest] = await db()<Pick<Run, "strategy">[]>`select strategy from runs where id = ${run.id}`;
-    const report = await writeReport({ run, cases, strategy: latest?.strategy ?? null });
+    const report = await writeReport({ run, cases, strategy: latest?.strategy ?? null, stopAt: deadline });
     const done = await db()`
       update runs set status = 'completed', report = ${json(report)}, activity = null, agent = null, completed_at = now()
       where id = ${run.id} and claim_token = ${lease.token} returning id`;
@@ -418,6 +433,8 @@ async function processRun(run: Run): Promise<void> {
   } finally {
     clearInterval(heartbeat);
     await browser?.close().catch(() => undefined);
+    await proxy?.close().catch(() => undefined);
+    endBudget(run.id);
   }
 }
 
@@ -432,6 +449,8 @@ async function emailReport(run: Run): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (!Number.isFinite(MINUTES_PER_HOUR) || MINUTES_PER_HOUR <= 0 || MINUTES_PER_HOUR > 60) throw new Error("Invalid SHIFT_MINUTES_PER_HOUR");
+  budgetLimit("junior", 60, true);
   // Fail fast: claiming a paid run without model credentials would burn the customer's shift.
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     log("error", "ANTHROPIC_API_KEY is not set; the worker will not claim runs");

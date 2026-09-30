@@ -8,13 +8,15 @@ export async function GET(_request: Request, { params }: RouteContext<"/runs/[id
   if (!run) return new Response("Report not found.", { status: 404 });
 
   const cases = await db()<TestCase[]>`
-    select seq, agent, title, viewport, expected, status, actual, severity, actions
+    select seq, agent, title, viewport, expected, status, actual, severity, actions, failure_assertion
     from test_cases where run_id = ${id} order by seq`;
   const host = new URL(run.url).hostname.replace(/[^a-z0-9.-]/gi, "");
 
   return new Response(buildSpec(run.url, cases), {
     headers: {
       "Content-Type": "text/typescript; charset=utf-8",
+      "Cache-Control": "private, no-store",
+      "X-Robots-Tag": "noindex, nofollow",
       "Content-Disposition": `attachment; filename="${host}.spec.ts"`,
     },
   });

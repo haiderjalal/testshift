@@ -16,7 +16,7 @@ const DELIVERABLES = [
   { label: "Test plan", body: "Every unit, integration, end-to-end and smoke test the agents wrote for your real pages." },
   { label: "Real-browser runs", body: "Each test clicked through in Chrome, on desktop and, on Senior and up, mobile." },
   { label: "Bug report", body: "Failures ranked by severity, with steps to reproduce, expected vs actual, and a screenshot." },
-  { label: "Playwright suite", body: "Every test that ran, as code grouped by agent, ready to run in your CI on each release." },
+  { label: "Playwright suite", body: "Replayable browser checks with assertions, grouped by agent for your CI. Automated audits and coverage gaps stay in the report." },
 ];
 
 const FAQS = [

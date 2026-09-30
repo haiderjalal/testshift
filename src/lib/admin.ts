@@ -57,9 +57,15 @@ export async function isAdmin(): Promise<boolean> {
   const password = configuredPassword();
   const value = (await cookies()).get(COOKIE)?.value;
   if (!password || !value) return false;
+  return verifyAdminToken(value, password);
+}
+
+export function verifyAdminToken(value: string, password: string): boolean {
+  // Check bytes and structure before timingSafeEqual; equal JS string lengths can have unequal UTF-8 lengths.
+  if (!/^\d{13}\.[a-f0-9]{64}$/.test(value)) return false;
   const [expiresText, signature = ""] = value.split(".");
   const expires = Number(expiresText);
-  if (!Number.isFinite(expires) || expires < Date.now()) return false;
+  if (!Number.isFinite(expires) || expires < Date.now() || expires > Date.now() + SESSION_HOURS * 3_600_000) return false;
   const expected = sign(expires, password);
   return signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }

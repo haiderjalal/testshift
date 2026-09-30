@@ -69,22 +69,15 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
   try {
     const visitor = await clientKey();
     if (!(await allow(`book:${visitor}`, BOOKINGS_PER_IP_PER_HOUR, 3_600))) return { message: BUSY_MESSAGE };
-    if (trial) {
-      // Counted from trials actually created, so a refused attempt doesn't use up a visitor's allowance.
-      const [{ today, fromVisitor }] = await db()<{ today: number; fromVisitor: number }[]>`
-        select count(*)::int as today, count(*) filter (where trial_ip = ${visitor})::int as "fromVisitor"
-        from runs where is_trial and created_at > now() - interval '1 day'`;
-      if (fromVisitor >= TRIALS_PER_IP_PER_DAY) {
-        return { errors: { hours: "Your network has already used its free trials today. Pick hours to book a paid shift." } };
-      }
-      if (today >= MAX_TRIALS_PER_DAY) {
-        log("warn", "Daily free-trial cap reached", { cap: MAX_TRIALS_PER_DAY });
-        return { errors: { hours: "Free trials are fully booked for today. Pick hours to book a paid shift, or try tomorrow." } };
-      }
-    }
     const booking = { url, email, plan, notes };
     destination = trial ? await createTrial({ ...booking, visitor }) : await createBooking({ ...booking, hours: Number(hours) });
   } catch (e) {
+    if (e instanceof postgres.PostgresError && trial && e.message === "trial_ip_limit") {
+      return { errors: { hours: "Your network has already used its free trials today. Pick hours to book a paid shift." } };
+    }
+    if (e instanceof postgres.PostgresError && trial && e.message === "trial_global_limit") {
+      return { errors: { hours: "Free trials are fully booked for today. Pick hours to book a paid shift, or try tomorrow." } };
+    }
     if (e instanceof postgres.PostgresError && e.code === "23505" && trial) {
       return {
         errors: {
@@ -110,11 +103,10 @@ interface Booking {
  * registrable domain allow one per person and one per website, even under parallel requests.
  */
 async function createTrial(b: Booking & { visitor: string }): Promise<string> {
+  if (!Number.isInteger(MAX_TRIALS_PER_DAY) || MAX_TRIALS_PER_DAY < 1) throw new Error("Invalid MAX_TRIALS_PER_DAY");
   const [run] = await db()<{ id: string }[]>`
-    insert into runs (url, email, plan, minutes, is_trial, notes, status, trial_email, trial_site, trial_ip)
-    values (${b.url}, ${b.email}, ${b.plan}, ${TRIAL_MINUTES}, true, ${b.notes}, 'queued',
-      ${emailKey(b.email)}, ${siteKey(new URL(b.url).hostname)}, ${b.visitor})
-    returning id`;
+    select create_trial(${b.url}, ${b.email}, ${b.plan}, ${TRIAL_MINUTES}, ${b.notes},
+      ${emailKey(b.email)}, ${siteKey(new URL(b.url).hostname)}, ${b.visitor}, ${MAX_TRIALS_PER_DAY}, ${TRIALS_PER_IP_PER_DAY}) as id`;
   return `/runs/${run.id}`;
 }
 
