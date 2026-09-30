@@ -5,6 +5,7 @@ import { startTransition, useActionState, useState, type FormEvent } from "react
 import Link from "next/link";
 
 import { HOUR_OPTIONS, MODELS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
+import { money, type BetaPrices } from "@/lib/beta-pricing";
 
 import { bookShift, type BookingState } from "./actions";
 
@@ -21,18 +22,20 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 }
 
 interface Props {
+  prices: BetaPrices;
   defaultUrl: string;
   defaultPlan: PlanId | null;
   defaultShift: "trial" | number;
 }
 
-export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
+export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Props) {
   const [state, formAction, pending] = useActionState<BookingState, FormData>(bookShift, {});
   const [plan, setPlan] = useState<PlanId | null>(defaultPlan);
   const [shift, setShift] = useState<"trial" | number>(defaultShift);
   const errors = state.errors ?? {};
   const trial = shift === "trial";
-  const total = trial || !plan ? 0 : PLANS[plan].rate * shift;
+  const hourly = plan ? prices[plan] : undefined;
+  const total = trial || hourly === undefined ? null : hourly * shift;
   const chip =
     "cursor-pointer rounded-xl border border-rule bg-card py-3 text-center font-mono has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-ink";
 
@@ -46,6 +49,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="mt-10 space-y-9" noValidate>
+      <input type="hidden" name="hourlyQuote" value={hourly ?? ""} />
       <div>
         <label htmlFor="url" className="font-medium">
           Website to test
@@ -83,7 +87,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
               />
               <span className="flex items-baseline justify-between">
                 <span className="font-semibold">{p.name}</span>
-                <span className="font-mono text-sm">${p.rate}/h</span>
+                <span className="font-mono text-sm">{prices[id] === undefined ? "By quote" : `${money(prices[id]!)}/h`}</span>
               </span>
               <span className="mt-1 block text-sm text-graphite">{p.pitch}</span>
               <span className="mt-2 block font-mono text-[11px] text-dev">{MODELS[p.model].label}</span>
@@ -190,14 +194,14 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
           </p>
         )}
         <button disabled={pending} className="btn-primary h-13 w-full text-lg disabled:opacity-60">
-          {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : plan ? `Book ${shift}-hour shift · $${total}` : `Book ${shift}-hour shift`}
+          {pending ? "Booking…" : trial ? `Start free ${TRIAL_MINUTES}-minute shift` : `Request ${shift}-hour shift${total !== null ? ` · ${money(total)}` : " quote"}`}
         </button>
         <p className="mt-3 text-center text-sm text-graphite">
           {trial
             ? "No card needed. One free shift per email address and website."
-            : plan
-              ? `${PLANS[plan].name} · ${shift} × $${PLANS[plan].rate}. You'll pay securely with Stripe.`
-              : "Choose a plan to see the price."}
+            : hourly !== undefined
+              ? `${shift} × ${money(hourly)}. Fixed prepaid quote based on 10× estimated AI token cost. Email us for a Wise payment link; we confirm payment and start your time manually.`
+              : "Request an hourly quote based on 10× estimated AI token cost. We confirm the price before you pay by Wise. Your timer does not start when you submit this form."}
         </p>
       </div>
     </form>

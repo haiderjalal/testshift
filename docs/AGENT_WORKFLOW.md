@@ -88,7 +88,7 @@ The downloaded Playwright suite includes only completed cases with replayable as
 - Lower output ceilings by task and low-effort investigation/report writing.
 - No automatic SDK retries or server-side model fallback chains.
 - Before each model request, reserve a conservative input/output cost estimate. Stop new calls if remaining allowance is insufficient.
-- Defaults: $2 estimated AI cost per trial; 25% of paid revenue. Configure with `QA_MAX_TRIAL_USD` and `QA_AI_REVENUE_FRACTION`.
+- Defaults: $2 estimated AI cost per trial; 10% of the paid order's stored quote. Configure with `QA_MAX_TRIAL_USD` and `QA_AI_REVENUE_FRACTION`. See [beta billing](BETA_BILLING.md) for fixed 10× pricing and manual Wise starts.
 - Account for recorded spend on resume. Failed API calls retain their local reservation. Use a deterministic final report when necessary.
 
 Budgeting uses configured model rates, not provider invoices. Unknown failed-call charges, usage-log failures and process crashes are not durably reserved across restarts. Configure provider-level spending limits; a durable request-cost ledger is a production follow-up. A budget-limited shift must report gaps, not fabricate extra checks to fill purchased time.

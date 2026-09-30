@@ -1,87 +1,37 @@
 "use client";
 
 import { useState } from "react";
-
-import { MODELS, PLANS, type PlanId } from "@/lib/plans";
-
+import { PLANS, PLAN_IDS, type PlanId } from "@/lib/plans";
+import { TOKEN_MARKUP, type BetaPrices } from "@/lib/beta-pricing";
 import type { PlanAverage } from "./data";
 
-/**
- * Starting estimates until real shifts exist: roughly 2M tokens per shift-hour, mostly cache reads.
- * ponytail: rough guesses; replaced per plan as soon as one shift on that plan completes.
- */
-const ESTIMATES: Record<PlanId, Omit<PlanAverage, "plan" | "runs">> = {
-  junior: { costPerHour: 4, tokensPerHour: 2_000_000 },
-  senior: { costPerHour: 9, tokensPerHour: 2_000_000 },
-  lead: { costPerHour: 14, tokensPerHour: 2_600_000 },
-  principal: { costPerHour: 28, tokensPerHour: 2_200_000 },
-};
+const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const bounded = (raw: string, max: number) => Number.isFinite(Number(raw)) ? Math.max(0, Math.min(max, Number(raw))) : 0;
+const input = "mt-1 w-full rounded-lg border border-rule bg-paper px-3 py-2 font-mono";
 
-const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1e3)}K`);
-/** Number inputs: empty or invalid becomes the minimum, anything else is clamped to a sane range. */
-const clamp = (raw: string, min: number, max: number) => {
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
-};
-const input = "mt-1 w-full rounded-lg border border-rule bg-paper px-3 py-2 font-mono outline-none focus:border-ink";
-
-export function TokenCalculator({ averages }: { averages: Partial<Record<PlanId, PlanAverage>> }) {
-  const [plan, setPlan] = useState<PlanId>("senior");
-  const [hours, setHours] = useState(2);
+export function TokenCalculator({ averages, prices }: { averages: Partial<Record<PlanId, PlanAverage>>; prices: BetaPrices }) {
+  const [plan, setPlan] = useState<PlanId>("junior");
+  const [customCost, setCustomCost] = useState<string | null>(null);
+  const [hours, setHours] = useState(1);
   const [shifts, setShifts] = useState(20);
-
   const measured = averages[plan];
-  const rate = measured ?? ESTIMATES[plan];
-  const perShift = { tokens: rate.tokensPerHour * hours, cost: rate.costPerHour * hours, revenue: PLANS[plan].rate * hours };
-  const margin = perShift.revenue > 0 ? (perShift.revenue - perShift.cost) / perShift.revenue : 0;
-
-  return (
-    <div className="rounded-2xl border border-rule bg-card p-6">
-      <h2 className="font-display text-lg font-semibold">Token calculator</h2>
-      <p className="mt-1 text-sm text-graphite">
-        {measured
-          ? `Based on ${measured.runs} completed ${PLANS[plan].name} shift${measured.runs === 1 ? "" : "s"}.`
-          : `No completed ${PLANS[plan].name} shifts yet: using a starting estimate.`}{" "}
-        Model: {MODELS[PLANS[plan].model].label}.
-      </p>
-      <div className="mt-5 grid gap-4 sm:grid-cols-3">
-        <label className="text-sm">
-          Plan
-          <select value={plan} onChange={(e) => setPlan(e.target.value as PlanId)} className={input}>
-            {(Object.keys(PLANS) as PlanId[]).map((id) => (
-              <option key={id} value={id}>
-                {PLANS[id].name} · ${PLANS[id].rate}/h
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          Hours per shift
-          <input type="number" min={0.25} max={8} step={0.25} value={hours} onChange={(e) => setHours(clamp(e.target.value, 0, 8))} className={input} />
-        </label>
-        <label className="text-sm">
-          Shifts per month
-          <input type="number" min={0} max={10000} value={shifts} onChange={(e) => setShifts(clamp(e.target.value, 0, 10_000))} className={input} />
-        </label>
-      </div>
-      <dl className="mt-6 grid grid-cols-2 gap-4 font-mono text-sm sm:grid-cols-4">
-        {[
-          ["Tokens / shift", tokens(perShift.tokens)],
-          ["Claude cost / shift", usd(perShift.cost)],
-          ["Revenue / shift", usd(perShift.revenue)],
-          ["Margin", `${Math.round(margin * 100)}%`],
-          ["Tokens / month", tokens(perShift.tokens * shifts)],
-          ["Claude cost / month", usd(perShift.cost * shifts)],
-          ["Revenue / month", usd(perShift.revenue * shifts)],
-          ["Profit / month", usd((perShift.revenue - perShift.cost) * shifts)],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-rule bg-paper p-3">
-            <dt className="text-[11px] tracking-wide text-graphite uppercase">{label}</dt>
-            <dd className="mt-1 text-base text-ink">{value}</dd>
-          </div>
-        ))}
-      </dl>
+  const estimate = customCost === null ? (prices[plan] === undefined ? measured?.costPerHour ?? 0 : prices[plan]! / 100 / TOKEN_MARKUP) : bounded(customCost, 1000);
+  const revenue = estimate * TOKEN_MARKUP * hours;
+  const cost = estimate * hours;
+  return <div className="rounded-2xl border border-rule bg-card p-6">
+    <h2 className="font-display text-lg font-semibold">10× hourly quote calculator</h2>
+    <p className="mt-2 text-sm text-graphite">What-if estimate only; changing this calculator does not publish prices. {measured ? `${measured.runs} qualifying long-run sample(s): ${usd(measured.costPerHour)} estimated token cost per observed hour.` : "No qualifying hourly samples for this plan. Enter your estimate; a short synthetic run is not an hourly benchmark."}</p>
+    <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <label className="text-sm">Plan<select value={plan} onChange={(e) => { setPlan(e.target.value as PlanId); setCustomCost(null); }} className={input}>{PLAN_IDS.map((id) => <option key={id} value={id}>{PLANS[id].name}</option>)}</select></label>
+      <label className="text-sm">Estimated AI cost / hour (USD)<input type="number" min="0" max="1000" step="0.01" value={customCost ?? (estimate || "")} onChange={(e) => setCustomCost(e.target.value)} className={input} /></label>
+      <label className="text-sm">Hours per shift<input type="number" min="1" max="8" step="1" value={hours} onChange={(e) => setHours(Math.max(1, Math.floor(bounded(e.target.value, 8))))} className={input} /></label>
+      <label className="text-sm">Shifts per month<input type="number" min="0" max="10000" step="1" value={shifts} onChange={(e) => setShifts(Math.floor(bounded(e.target.value, 10000)))} className={input} /></label>
     </div>
-  );
+    <dl className="mt-5 grid grid-cols-2 gap-3 font-mono text-sm sm:grid-cols-4">{[
+      ["Customer hourly quote", usd(estimate * TOKEN_MARKUP)], ["AI cost / shift", usd(cost)], ["Customer total / shift", usd(revenue)],
+      ["Token-only gross margin", estimate > 0 ? "90%" : "—"], ["AI cost / month", usd(cost * shifts)], ["Revenue / month", usd(revenue * shifts)],
+      ["Before other costs / month", usd((revenue - cost) * shifts)],
+    ].map(([label, value]) => <div key={label} className="rounded-xl border border-rule bg-paper p-3"><dt className="text-xs text-graphite">{label}</dt><dd className="mt-1">{value}</dd></div>)}</dl>
+    <p className="mt-3 text-xs text-graphite">10× is a price multiplier, not net profit. Actual token usage, hosting, Wise fees, refunds and support affect margin.</p>
+  </div>;
 }

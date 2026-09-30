@@ -52,7 +52,8 @@ async function claimRun(): Promise<Run | null> {
       heartbeat_at = now()
     where id = (
       select id from runs
-      where status = 'queued' or (status = 'running' and heartbeat_at < now() - interval '2 minutes')
+      where (status = 'queued' or (status = 'running' and heartbeat_at < now() - interval '2 minutes'))
+        and (payment_method <> 'wise' or (payment_confirmed_at is not null and start_authorized_at is not null))
       order by (plan = 'principal' and not is_trial) desc, created_at
       limit 1
       for update skip locked
@@ -396,7 +397,7 @@ async function processRun(run: Run): Promise<void> {
 
   try {
     const [{ spent }] = await db()<{ spent: number }[]>`select coalesce(sum(cost_usd), 0)::float8 as spent from ai_usage where run_id = ${run.id}`;
-    startBudget(run.id, new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial), spent));
+    startBudget(run.id, new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial, run.quoted_total_cents), spent));
     proxy = await startEgressProxy();
     browser = await chromium.launch({ proxy: { server: proxy.server }, args: ["--proxy-bypass-list=<-loopback>", "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
     registerEgressBrowser(browser, proxy.server);

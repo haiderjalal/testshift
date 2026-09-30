@@ -8,7 +8,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { errorMessage, log } from "@/lib/log";
 import { emailKey, isPublicHost, siteKey } from "@/lib/net";
-import { appUrl, stripe } from "@/lib/payments";
+import { createManualOrder, OrderError } from "@/lib/beta-orders";
 import { HOUR_OPTIONS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
 import { allow, clientKey } from "@/lib/rateLimit";
 
@@ -22,7 +22,6 @@ export interface BookingState {
   message?: string;
   errors?: Partial<Record<"url" | "email" | "plan" | "hours" | "notes" | "consent", string>>;
 }
-
 const bookingSchema = z.object({
   url: z
     .url({ protocol: /^https?$/i, error: "Enter the full link, like https://your-site.com" })
@@ -70,8 +69,13 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     const visitor = await clientKey();
     if (!(await allow(`book:${visitor}`, BOOKINGS_PER_IP_PER_HOUR, 3_600))) return { message: BUSY_MESSAGE };
     const booking = { url, email, plan, notes };
-    destination = trial ? await createTrial({ ...booking, visitor }) : await createBooking({ ...booking, hours: Number(hours) });
+    const quoted = String(formData.get("hourlyQuote") ?? "");
+    const expectedHourly = quoted === "" ? null : Number(quoted);
+    if (!trial && expectedHourly !== null && (!/^\d+$/.test(quoted) || !Number.isSafeInteger(expectedHourly))) return { message: "Invalid quote. Refresh the page." };
+    destination = trial ? await createTrial({ ...booking, visitor })
+      : `/runs/${await createManualOrder({ ...booking, hours: Number(hours) }, expectedHourly)}`;
   } catch (e) {
+    if (e instanceof OrderError) return { message: e.message };
     if (e instanceof postgres.PostgresError && trial && e.message === "trial_ip_limit") {
       return { errors: { hours: "Your network has already used its free trials today. Pick hours to book a paid shift." } };
     }
@@ -108,38 +112,4 @@ async function createTrial(b: Booking & { visitor: string }): Promise<string> {
     select create_trial(${b.url}, ${b.email}, ${b.plan}, ${TRIAL_MINUTES}, ${b.notes},
       ${emailKey(b.email)}, ${siteKey(new URL(b.url).hostname)}, ${b.visitor}, ${MAX_TRIALS_PER_DAY}, ${TRIALS_PER_IP_PER_DAY}) as id`;
   return `/runs/${run.id}`;
-}
-
-async function createBooking(b: Booking & { hours: number }): Promise<string> {
-  if (!stripe && process.env.NODE_ENV === "production") throw new Error("STRIPE_SECRET_KEY is not set");
-
-  const [run] = await db()<{ id: string }[]>`
-    insert into runs (url, email, plan, minutes, notes, status)
-    values (${b.url}, ${b.email}, ${b.plan}, ${b.hours * 60}, ${b.notes}, ${stripe ? "pending_payment" : "queued"})
-    returning id`;
-
-  // Local development without Stripe keys: skip payment and queue the shift straight away.
-  if (!stripe) return `/runs/${run.id}`;
-
-  const plan = PLANS[b.plan];
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: b.email,
-    line_items: [
-      {
-        quantity: b.hours,
-        price_data: {
-          currency: "usd",
-          unit_amount: plan.rate * 100,
-          product_data: { name: `${plan.name} shift (per hour)`, description: new URL(b.url).hostname },
-        },
-      },
-    ],
-    metadata: { run_id: run.id },
-    success_url: `${appUrl()}/runs/${run.id}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl()}/hire?plan=${b.plan}`,
-  });
-  await db()`update runs set stripe_session_id = ${session.id} where id = ${run.id}`;
-  if (!session.url) throw new Error("Stripe did not return a checkout URL");
-  return session.url;
 }

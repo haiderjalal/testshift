@@ -30,7 +30,7 @@ export function json(value: object): postgres.Parameter {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID.test(value);
 
-export type RunStatus = "pending_payment" | "queued" | "running" | "completed" | "failed";
+export type RunStatus = "pending_payment" | "paid" | "queued" | "running" | "completed" | "failed";
 
 export interface SitePage {
   url: string;
@@ -76,6 +76,11 @@ export interface Run {
   deadline_at: Date | null;
   completed_at: Date | null;
   created_at: Date;
+  payment_method?: string;
+  quoted_hourly_cents?: number | null;
+  quoted_total_cents?: number | null;
+  payment_confirmed_at?: Date | null;
+  start_authorized_at?: Date | null;
 }
 
 export const BROWSER_ACTIONS = [

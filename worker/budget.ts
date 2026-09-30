@@ -7,13 +7,13 @@ export class DeadlineError extends Error {
   constructor() { super("The testing time window ended."); }
 }
 
-export function budgetLimit(plan: PlanId, minutes: number, trial: boolean): number {
+export function budgetLimit(plan: PlanId, minutes: number, trial: boolean, quotedTotalCents?: number | null): number {
   const trialLimit = Number(process.env.QA_MAX_TRIAL_USD ?? 2);
-  const fraction = Number(process.env.QA_AI_REVENUE_FRACTION ?? 0.25);
+  const fraction = Number(process.env.QA_AI_REVENUE_FRACTION ?? 0.1);
   if (!Number.isFinite(trialLimit) || trialLimit <= 0 || !Number.isFinite(fraction) || fraction <= 0 || fraction > 1) {
     throw new Error("Invalid AI budget configuration");
   }
-  return trial ? trialLimit : PLANS[plan].rate * minutes / 60 * fraction;
+  return trial ? trialLimit : (quotedTotalCents != null ? quotedTotalCents / 100 : PLANS[plan].rate * minutes / 60) * fraction;
 }
 
 /** Reserve a conservative upper estimate before a call. Failed calls retain their reservation. */
@@ -43,7 +43,7 @@ export async function withinBudget<T extends { model: string; usage: {
   input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null; cache_creation?: { ephemeral_1h_input_tokens?: number } | null;
 } }>(
-  run: { id: string; plan: PlanId; minutes: number; is_trial: boolean },
+  run: { id: string; plan: PlanId; minutes: number; is_trial: boolean; quoted_total_cents?: number | null },
   input: unknown,
   maxOutput: number,
   stopAt: number,
@@ -51,7 +51,7 @@ export async function withinBudget<T extends { model: string; usage: {
 ): Promise<T> {
   if (Date.now() >= stopAt) throw new DeadlineError();
   let budget = budgets.get(run.id);
-  if (!budget) { budget = new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial)); budgets.set(run.id, budget); }
+  if (!budget) { budget = new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial, run.quoted_total_cents)); budgets.set(run.id, budget); }
   const model = PLANS[run.plan].model;
   const settle = budget.reserve(model, input, maxOutput);
   const timeout = Math.max(1, Math.min(45_000, stopAt - Date.now()));

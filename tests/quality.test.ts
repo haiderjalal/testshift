@@ -101,7 +101,8 @@ test("expired or exhausted requests never call the model transport", async () =>
 });
 test("default trial and paid budgets bound exposure", () => {
   assert.equal(budgetLimit("principal", 20, true), 2);
-  assert.equal(budgetLimit("junior", 60, false), 7.5);
+  assert.equal(budgetLimit("junior", 60, false), 3);
+  assert.equal(budgetLimit("junior", 120, false, 2000), 2, "Manual budget follows the stored quote, not legacy plan prices");
 });
 test("URL checks cannot pass by matching a substring of the wrong destination", () => {
   assert.equal(urlMatches("https://site.example/not-success", "/success"), false);

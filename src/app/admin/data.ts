@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { PLAN_IDS, PLANS, type PlanId } from "@/lib/plans";
+import { PLAN_IDS, type PlanId } from "@/lib/plans";
+import { loadBetaPrices } from "@/lib/beta-orders";
 
 export const PERIODS = { "7": "Last 7 days", "30": "Last 30 days", all: "All time" } as const;
 export type Period = keyof typeof PERIODS;
@@ -27,6 +28,12 @@ export interface RunRow {
   created_at: Date;
   tokens: number;
   cost: number;
+  revenue: number;
+}
+
+export interface BetaOrder {
+  id: string; url: string; email: string; plan: PlanId; minutes: number; notes: string;
+  status: "pending_payment" | "paid"; quoted_hourly_cents: number | null; quoted_total_cents: number | null;
 }
 
 export interface PlanAverage {
@@ -62,7 +69,7 @@ export async function loadDashboard(period: Period) {
   const from = since(period);
   const totals = () => sql.unsafe(TOTALS);
 
-  const [[total], byModel, byAgent, byDay, runs, revenueRows, averages, requests] = await Promise.all([
+  const [[total], byModel, byAgent, byDay, runs, revenueRows, averages, requests, betaOrders, betaPrices] = await Promise.all([
     sql<TokenTotals[]>`select ${totals()} from ai_usage where created_at >= ${from}`,
     sql<UsageRow[]>`select model as key, ${totals()} from ai_usage where created_at >= ${from} group by model order by cost desc`,
     sql<UsageRow[]>`
@@ -73,6 +80,7 @@ export async function loadDashboard(period: Period) {
       where created_at >= ${from} group by 1 order by 1 desc limit 31`,
     sql<RunRow[]>`
       select r.id, r.url, r.plan, r.minutes, r.is_trial, r.status, r.created_at,
+        (case when r.payment_confirmed_at is not null then coalesce(r.amount_received_cents, 0) / 100.0 else 0 end)::float8 as revenue,
         coalesce(u.tokens, 0)::float8 as tokens, coalesce(u.cost, 0)::float8 as cost
       from runs r
       left join lateral (
@@ -81,27 +89,31 @@ export async function loadDashboard(period: Period) {
       ) u on true
       where r.created_at >= ${from}
       order by r.created_at desc limit 50`,
-    // Paid shifts only: trials are free and pending_payment was never paid.
-    sql<{ plan: PlanId; minutes: number }[]>`
-      select plan, coalesce(sum(minutes), 0)::float8 as minutes from runs
-      where not is_trial and status <> 'pending_payment' and created_at >= ${from} group by plan`,
-    // Averages come from all completed shifts, whatever the period, so the calculator has the most data.
+    // Only confirmed money, never infer revenue from booked time/status/current prices.
+    sql<{ revenue: number }[]>`select coalesce(sum(amount_received_cents),0)::float8 / 100 as revenue from runs
+      where not is_trial and payment_confirmed_at >= ${from}`,
+    // Exclude short trials/development speedups. Use observed test time, not purchased minutes.
     sql<{ plan: PlanId; runs: number; cost: number; tokens: number; minutes: number }[]>`
       select r.plan, count(*)::int as runs, sum(u.cost)::float8 as cost, sum(u.tokens)::float8 as tokens,
-        sum(r.minutes)::float8 as minutes
+        sum(extract(epoch from r.completed_at - r.testing_started_at) / 60)::float8 as minutes
       from runs r
       join (
         select run_id, sum(cost_usd) as cost, sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) as tokens
         from ai_usage group by run_id
       ) u on u.run_id = r.id
-      where r.status = 'completed'
+      where r.status = 'completed' and not r.is_trial and r.minutes >= 60
+        and r.completed_at >= r.testing_started_at + interval '50 minutes'
+        and r.completed_at <= r.testing_started_at + interval '10 hours'
       group by r.plan`,
     sql<CustomRequest[]>`
       select id, name, email, company, website, message, created_at from custom_requests
       order by created_at desc limit 50`,
+    sql<BetaOrder[]>`select id,url,email,plan,minutes,notes,status,quoted_hourly_cents,quoted_total_cents
+      from runs where payment_method = 'wise' and status in ('pending_payment','paid') order by created_at limit 100`,
+    loadBetaPrices(),
   ]);
 
-  const revenue = revenueRows.reduce((sum, r) => sum + (r.minutes / 60) * PLANS[r.plan].rate, 0);
+  const revenue = revenueRows[0]?.revenue ?? 0;
   const planAverages: Partial<Record<PlanId, PlanAverage>> = {};
   for (const row of averages) {
     const hours = row.minutes / 60;
@@ -110,5 +122,5 @@ export async function loadDashboard(period: Period) {
     }
   }
 
-  return { total, byModel, byAgent, byDay, runs, revenue, planAverages, requests, planIds: PLAN_IDS };
+  return { total, byModel, byAgent, byDay, runs, revenue, planAverages, requests, planIds: PLAN_IDS, betaOrders, betaPrices };
 }

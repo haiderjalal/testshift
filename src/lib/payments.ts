@@ -3,7 +3,8 @@ import Stripe from "stripe";
 import { db } from "./db";
 import { errorMessage, log } from "./log";
 
-export const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+// Parked for a future release. A leftover API key must not activate checkout during the beta.
+export const stripe = process.env.STRIPE_ENABLED === "1" && process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 export const appUrl = (): string => process.env.APP_URL ?? "http://localhost:3000";
 
@@ -13,9 +14,10 @@ export const appUrl = (): string => process.env.APP_URL ?? "http://localhost:300
  * session id is also recorded here in case saving it right after Checkout creation failed.
  */
 export async function markRunPaid(runId: string, sessionId: string): Promise<void> {
+  if (process.env.STRIPE_ENABLED !== "1") return;
   await db()`
     update runs set status = 'queued', stripe_session_id = ${sessionId}
-    where id = ${runId} and status = 'pending_payment'
+    where id = ${runId} and status = 'pending_payment' and payment_method <> 'wise'
       and (stripe_session_id is null or stripe_session_id = ${sessionId})`;
 }
 

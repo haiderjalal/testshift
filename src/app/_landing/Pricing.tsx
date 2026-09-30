@@ -1,10 +1,11 @@
 import Link from "next/link";
 
 import { MODELS, PLAN_IDS, PLANS, TRIAL_MINUTES } from "@/lib/plans";
+import { money, type BetaPrices } from "@/lib/beta-pricing";
 
 const TIER_COLOR = ["var(--color-dev)", "var(--color-staging)", "var(--color-uat)", "var(--color-prod)"];
 
-export function Pricing() {
+export function Pricing({ prices }: { prices: BetaPrices }) {
   return (
     <section id="pricing" data-stage="overview" aria-labelledby="pricing-heading" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-28 sm:px-8">
       <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">Pricing</p>
@@ -14,6 +15,7 @@ export function Pricing() {
       <p className="reveal mt-5 max-w-2xl text-lg text-graphite">
         Every plan runs all four agents. Higher plans use stronger Claude models and add automated audits.{" "}
         <span className="text-pass">Your first {TRIAL_MINUTES} minutes are free on any plan.</span>
+        {" "}Beta pricing is 10× estimated AI token cost per hour. Prepay a fixed quote by Wise after email onboarding; no subscription. Prices are estimates, not metered token invoices.
       </p>
 
       <div className="mt-14 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -29,7 +31,7 @@ export function Pricing() {
                 {plan.name}
               </p>
               <p className="mt-5 flex items-baseline gap-1.5">
-                <span className="font-display text-5xl font-semibold tracking-tight">${plan.rate}</span>
+                <span className="font-display text-3xl font-semibold tracking-tight">{prices[id] === undefined ? "By quote" : money(prices[id]!)}</span>
                 <span className="text-graphite">/ hour</span>
               </p>
               <p className="mt-3 inline-flex w-fit items-center gap-2 rounded-full border border-rule bg-paper/60 px-3 py-1 font-mono text-[11px] text-graphite">

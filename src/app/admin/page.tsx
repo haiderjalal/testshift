@@ -10,6 +10,7 @@ import { formatDuration, MODELS, PLANS, type ModelId } from "@/lib/plans";
 import { logOut } from "./actions";
 import { loadDashboard, PERIODS, type Period, type UsageRow } from "./data";
 import { TokenCalculator } from "./TokenCalculator";
+import { BetaOrders } from "./BetaOrders";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
@@ -99,7 +100,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         {[
           ["Tokens used", num(allTokens), `${num(total.input)} in · ${num(total.output)} out · ${num(total.cacheRead)} cached`],
           ["Claude cost", usd(total.cost), `${num(total.calls)} API calls`],
-          ["Revenue (paid shifts)", usd(data.revenue), "Free trials excluded"],
+          ["Confirmed payments", usd(data.revenue), "No inferred revenue from unpaid/legacy orders"],
           ["Profit", usd(profit), data.revenue > 0 ? `${Math.round((profit / data.revenue) * 100)}% margin` : "No paid shifts yet"],
         ].map(([title, value, note]) => (
           <div key={title} className="rounded-2xl border border-rule bg-card p-5">
@@ -110,8 +111,10 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         ))}
       </dl>
 
+      <BetaOrders orders={data.betaOrders} prices={data.betaPrices} averages={data.planAverages} />
+
       <div className="mt-6">
-        <TokenCalculator averages={data.planAverages} />
+        <TokenCalculator averages={data.planAverages} prices={data.betaPrices} />
       </div>
 
       <div className="mt-6 space-y-6">
@@ -155,7 +158,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
                     <td className="py-2 pr-4 text-right">{num(r.tokens)}</td>
                     <td className="py-2 pr-4 text-right">{usd(r.cost)}</td>
                     <td className="py-2 text-right text-ink">
-                      {r.is_trial || r.status === "pending_payment" ? usd(0) : usd((r.minutes / 60) * PLANS[r.plan].rate)}
+                      {usd(r.revenue)}
                     </td>
                   </tr>
                 ))}

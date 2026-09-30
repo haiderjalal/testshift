@@ -4,6 +4,9 @@ import { Logo } from "@/components/Logo";
 import { SiteHeader } from "@/components/SiteHeader";
 import { UrlForm } from "@/components/UrlForm";
 import { SITE, TRIAL_MINUTES } from "@/lib/plans";
+import { loadBetaPrices } from "@/lib/beta-orders";
+
+export const dynamic = "force-dynamic";
 
 import { Consoles } from "./_landing/Consoles";
 import { Hero } from "./_landing/Hero";
@@ -20,6 +23,10 @@ const DELIVERABLES = [
 ];
 
 const FAQS = [
+  {
+    q: "How do I pay during the beta?",
+    a: "Request the hours you need, then email us with your order reference for onboarding and a Wise payment link. Your fixed hourly quote is 10 times our estimated AI token cost. We confirm payment and start your shift manually. No subscription, automatic top-up or surprise token invoice.",
+  },
   {
     q: "Are there really four agents?",
     a: "It's one AI tester working your shift in four modes, one after another, each with its own test type and instructions: Dev runs unit-level tests, Staging integration tests, UAT end-to-end journeys and Prod smoke and release checks. Every test in your report says which agent ran it.",
@@ -46,7 +53,8 @@ const FAQS = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const prices = await loadBetaPrices();
   return (
     <>
       <SiteHeader />
@@ -100,7 +108,7 @@ export default function Home() {
           <ReportStack />
         </section>
 
-        <Pricing />
+        <Pricing prices={prices} />
 
         <section id="faq" data-stage="overview" aria-labelledby="faq-heading" className="mx-auto max-w-4xl scroll-mt-20 px-5 py-24 sm:px-8">
           <h2 id="faq-heading" className="reveal font-display text-4xl font-semibold tracking-[-0.03em]">

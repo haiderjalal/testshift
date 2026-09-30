@@ -4,6 +4,8 @@ A single reference for anyone joining the project, human or AI assistant. It cov
 
 Last updated: 2026-09-30.
 
+**Beta billing supersedes the historical pricing/Stripe sections below:** see [BETA_BILLING.md](BETA_BILLING.md). Paid orders are fixed quotes at 10× owner-approved estimated AI cost, paid manually through Wise (@haiderj23), onboarded at haiderjalaldressify@gmail.com, then separately confirmed and started in `/admin`. No hourly benchmark is invented from the short evaluation. Stripe is disabled by default; old `PLANS.rate` values are legacy budget fallbacks, not public beta prices.
+
 Current hardening evidence and release gates: [QA_AUDIT.md](QA_AUDIT.md). Detailed implemented agent workflow and limits: [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md). Historical measurements below are not a new certification of this revision. The new QA-integrity migration has not been applied to production by this audit.
 
 ---
