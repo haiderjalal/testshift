@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { SiteHeader } from "@/components/SiteHeader";
 import { db, isUuid, type Run, type TestCase } from "@/lib/db";
+import { emailConfigured } from "@/lib/email";
 import { confirmCheckout } from "@/lib/payments";
 import { formatDuration, PLANS } from "@/lib/plans";
 
@@ -14,12 +15,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type RunView = Run & { elapsed_ms: number | null };
+type RunView = Run & { elapsed_ms: number | null; stripe_session_id: string | null };
 
 async function getRun(id: string): Promise<RunView | undefined> {
   // Elapsed time comes from the database clock, the same one that set the deadline.
   const [run] = await db()<RunView[]>`
-    select id, url, email, plan, minutes, is_trial, notes, status, activity, agent, report, error,
+    select id, url, email, plan, minutes, is_trial, notes, status, activity, agent, report, strategy, error, stripe_session_id,
       started_at, deadline_at, completed_at, created_at,
       (extract(epoch from least(now(), deadline_at) - started_at) * 1000)::float8 as elapsed_ms
     from runs where id = ${id}`;
@@ -34,12 +35,12 @@ export default async function RunPage({ params, searchParams }: PageProps<"/runs
   let run = await getRun(id);
   if (!run) notFound();
   if (run.status === "pending_payment" && typeof sessionId === "string") {
-    await confirmCheckout(run.id, sessionId);
+    await confirmCheckout(run.id, sessionId, run.stripe_session_id);
     run = (await getRun(id)) ?? run;
   }
 
   const cases = await db()<TestCase[]>`
-    select id, seq, agent, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
+    select id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
       actions, screenshot is not null as has_screenshot, finished_at
     from test_cases where run_id = ${id} order by seq`;
   const plan = PLANS[run.plan];
@@ -63,7 +64,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/runs
             <p className="mt-2 text-graphite">{run.error}</p>
           </div>
         ) : (
-          <LiveShift run={run} elapsed={run.elapsed_ms ?? 0} cases={cases} emailConfigured={Boolean(process.env.RESEND_API_KEY)} />
+          <LiveShift run={run} elapsed={run.elapsed_ms ?? 0} cases={cases} emailConfigured={emailConfigured()} />
         )}
       </main>
     </>

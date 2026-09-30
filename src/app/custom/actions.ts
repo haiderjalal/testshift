@@ -5,6 +5,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
+import { allow, clientKey } from "@/lib/rateLimit";
+
+const QUOTES_PER_IP_PER_HOUR = 5;
 
 export interface CustomState {
   sent?: boolean;
@@ -43,6 +46,9 @@ export async function requestQuote(_prev: CustomState, formData: FormData): Prom
 
   const { name, email, company, website, details } = parsed.data;
   try {
+    if (!(await allow(`quote:${await clientKey()}`, QUOTES_PER_IP_PER_HOUR, 3_600))) {
+      return { message: "You've sent several requests already. We'll reply to those first." };
+    }
     await db()`
       insert into custom_requests (name, email, company, website, message)
       values (${name}, ${email}, ${company}, ${website}, ${details})`;

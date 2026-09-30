@@ -16,7 +16,8 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ success: false, message: "Invalid signature." }, { status: 400 });
   }
 
-  if (event.type === "checkout.session.completed") {
+  // Card payments complete immediately; bank debits and similar methods succeed later.
+  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const session = event.data.object;
     const runId = session.metadata?.run_id;
     if (runId && session.payment_status === "paid") await markRunPaid(runId, session.id);

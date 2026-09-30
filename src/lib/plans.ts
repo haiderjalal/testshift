@@ -112,14 +112,21 @@ export function formatDuration(minutes: number): string {
   return `${hours} ${hours === 1 ? "hour" : "hours"}`;
 }
 
-/** Cost in USD of one Claude response, from its token usage. */
+/**
+ * Cost in USD of one Claude response. `cacheWrite` is 5-minute cache writes (1.25× input);
+ * `cacheWrite1h` is 1-hour cache writes, billed at 2× input.
+ */
 export function tokenCost(
   model: ModelId,
-  usage: { input: number; output: number; cacheRead: number; cacheWrite: number },
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h?: number },
 ): number {
   const p = MODELS[model];
   return (
-    (usage.input * p.input + usage.output * p.output + usage.cacheRead * p.cacheRead + usage.cacheWrite * p.cacheWrite) /
+    (usage.input * p.input +
+      usage.output * p.output +
+      usage.cacheRead * p.cacheRead +
+      usage.cacheWrite * p.cacheWrite +
+      (usage.cacheWrite1h ?? 0) * p.input * 2) /
     1_000_000
   );
 }

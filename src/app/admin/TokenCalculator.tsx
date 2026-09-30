@@ -19,6 +19,11 @@ const ESTIMATES: Record<PlanId, Omit<PlanAverage, "plan" | "runs">> = {
 
 const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1e3)}K`);
+/** Number inputs: empty or invalid becomes the minimum, anything else is clamped to a sane range. */
+const clamp = (raw: string, min: number, max: number) => {
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+};
 const input = "mt-1 w-full rounded-lg border border-rule bg-paper px-3 py-2 font-mono outline-none focus:border-ink";
 
 export function TokenCalculator({ averages }: { averages: Partial<Record<PlanId, PlanAverage>> }) {
@@ -53,11 +58,11 @@ export function TokenCalculator({ averages }: { averages: Partial<Record<PlanId,
         </label>
         <label className="text-sm">
           Hours per shift
-          <input type="number" min={0.25} max={8} step={0.25} value={hours} onChange={(e) => setHours(Number(e.target.value) || 0)} className={input} />
+          <input type="number" min={0.25} max={8} step={0.25} value={hours} onChange={(e) => setHours(clamp(e.target.value, 0, 8))} className={input} />
         </label>
         <label className="text-sm">
           Shifts per month
-          <input type="number" min={0} max={10000} value={shifts} onChange={(e) => setShifts(Number(e.target.value) || 0)} className={input} />
+          <input type="number" min={0} max={10000} value={shifts} onChange={(e) => setShifts(clamp(e.target.value, 0, 10_000))} className={input} />
         </label>
       </div>
       <dl className="mt-6 grid grid-cols-2 gap-4 font-mono text-sm sm:grid-cols-4">
