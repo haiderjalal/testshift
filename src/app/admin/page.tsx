@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Admin", robots: { index: false, foll
 const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = (n: number) => Math.round(n).toLocaleString("en-US");
 const label = (key: string) =>
-  key in MODELS ? MODELS[key as ModelId].label : (AGENT_IDS as string[]).includes(key) ? agentById(key as AgentId).name : key === "report" ? "Report writer" : key;
+  Object.hasOwn(MODELS, key) ? MODELS[key as ModelId].label : (AGENT_IDS as string[]).includes(key) ? agentById(key as AgentId).name : key === "report" ? "Report writer" : key;
 
 function UsageTable({ title, rows, keyHeading }: { title: string; rows: UsageRow[]; keyHeading: string }) {
   return (
@@ -61,7 +61,7 @@ function UsageTable({ title, rows, keyHeading }: { title: string; rows: UsageRow
 export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   if (!(await isAdmin())) redirect("/admin/login");
   const { period: raw } = await searchParams;
-  const period: Period = typeof raw === "string" && raw in PERIODS ? (raw as Period) : "30";
+  const period: Period = typeof raw === "string" && Object.hasOwn(PERIODS, raw) ? (raw as Period) : "30";
   const data = await loadDashboard(period);
   const { total } = data;
   const allTokens = total.input + total.output + total.cacheRead + total.cacheWrite;

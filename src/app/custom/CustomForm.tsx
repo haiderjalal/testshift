@@ -41,7 +41,7 @@ export function CustomForm() {
         {...props}
       />
       {errors[name] && (
-        <p id={`${name}-error`} className="mt-2 text-sm text-fail">
+        <p id={`${name}-error`} role="alert" className="mt-2 text-sm text-fail">
           {errors[name]}
         </p>
       )}
@@ -72,7 +72,7 @@ export function CustomForm() {
           className={field}
         />
         {errors.details && (
-          <p id="details-error" className="mt-2 text-sm text-fail">
+          <p id="details-error" role="alert" className="mt-2 text-sm text-fail">
             {errors.details}
           </p>
         )}

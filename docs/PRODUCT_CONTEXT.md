@@ -100,33 +100,37 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 
 ### Step by step, from submitting a link
 1. **Booking** (`src/app/hire/actions.ts`).
-   - Zod validates every field, and the SSRF guard rejects private or internal addresses (`src/lib/net.ts`).
-   - **Trial:** inserts a run with `is_trial = true`, `minutes = 20`, status `queued`. A unique violation becomes "The free trial has already been used for this email or website…".
-   - **Paid:** inserts with status `pending_payment`, then redirects to Stripe Checkout.
-   - **Dev without Stripe keys:** skips payment. Production refuses to book without keys.
-2. **Payment.** The webhook (signature-verified) or the return-page check sets `queued`. Both use the same idempotent `markRunPaid`.
+   - Zod validates every field. The URL is stored in normalised form (`new URL().href`); links with a username or password are refused, and the SSRF guard rejects private or internal hosts (`src/lib/net.ts`).
+   - Rate limits (`src/lib/rateLimit.ts`, hashed IPs only): 20 bookings per IP per hour; 2 free trials per IP per day, counted from trials actually created; a global cap of `MAX_TRIALS_PER_DAY` trials (default 100).
+   - **Trial:** one per mailbox (`emailKey`: case, `+tags` and Gmail dots ignored) and one per registrable domain (`siteKey`: `www.` and subdomains share one), enforced by unique indexes.
+   - **Paid:** status `pending_payment`, then Stripe Checkout.
+2. **Payment.** The signed webhook (`completed` or `async_payment_succeeded`) or the return page (only for the shift's own session id) calls the idempotent `markRunPaid`.
 3. **Pickup** (`worker/index.ts`).
-   - Claims Principal shifts first, then oldest first, and sets `deadline_at = now + minutes`.
-   - Writes a heartbeat every 30s. A silent run is re-claimed after 2 minutes and resumes.
-   - The worker refuses to start without `ANTHROPIC_API_KEY`.
-4. **Map the site** (inside the Dev phase). A breadth-first crawl of up to 25 pages (10 on a trial) records status, load time, errors and an accessibility outline. It is saved to `runs.site_map` for resuming.
-5. **Four agent phases** (`agentWindows()` splits the time until `deadline − min(2 min, 10%)`). For each agent in order:
-   - `runs.agent` and `runs.activity` are updated, which drives the live page and the 3D camera.
-   - **Automated checks first, once per shift:**
-     - UAT: an axe-core accessibility audit per page (Lead and up).
-     - Prod: fresh page-load smoke tests on every page, a Core Web Vitals check per page (Lead and up), and a security-header review (Principal).
-   - **Then AI-planned tests of the agent's type.** Claude receives the site map, the agent's focus, the plan's depth and all tests so far, and returns 6–10 cases. Each runs in a fresh Chromium context (desktop, or Pixel 7 mobile when the plan allows it), with Claude driving the `browser` tool (goto, click, fill, press, select, hover, expect_*) and `finish`.
-   - If an agent runs out of useful tests, the next agent starts early. A test cut off by the end of the shift is left "not reached".
-6. **Report.** Claude writes the score, summary, strengths, recommendations and a note per agent. The run is marked `completed`, then the email is sent.
-7. **Export.** The browser actions actually performed are turned into Playwright code, grouped by agent.
+   - Paid Principal shifts go first, then oldest first; trials never jump the queue.
+   - Each claim gets a fresh `claim_token`. Heartbeats and final writes check it, so a worker that lost its claim stops instead of double-reporting.
+4. **Setup.**
+   - Map the site: a breadth-first crawl records status, load time, issues and a **compact outline** (only headings, fields, buttons, links and short text).
+   - **Test strategy:** one call lists the site's features (F1, F2, …) ranked by risk. All four agents plan against it, and the report shows feature coverage.
+5. **Four agent phases** (windows start after setup, so it never eats an agent's time). For each agent:
+   - Automated checks first: accessibility on UAT; smoke, Core Web Vitals and security headers on Prod. Third-party failures (analytics, ads) are noted, never counted as bugs. Login pages (401/403) are "blocked", not "failed".
+   - The **planner** writes tests with an executable **script** (Playwright steps and assertions). Batch size scales with the time left, and no planning starts with under 30 seconds to go.
+   - **Script-first execution:** each script runs in a fresh browser with no model call. If it passes, the test passes for free. Only if a step or check fails, or there's no script, does the **investigator** (Claude at low effort, several browser steps per call) decide whether the site is wrong or the step was, and record the verdict.
+   - Errors are isolated: a failing test becomes "blocked", a failing planner retries once, and a failing agent doesn't stop the next one.
+6. **Report** (low effort), completion (only if this worker still holds the claim), email.
+7. **Export.** Performed actions become Playwright code, grouped by agent. Comment text is sanitised so nothing in a URL or model output can inject code; page-open-only checks are left out.
 
-**Errors:** a crash during testing still produces a report of what ran. A crash in the report step marks the run `failed` with a friendly message.
+### How the tester saves tokens (`worker/ai.ts`)
+- **Cached context:** rules + site map + strategy are one prefix, cached with `cache_control` (a 1-hour TTL on shifts of an hour or more). Every planning call after the first re-reads it at the cache price.
+- **Compact site map:** it keeps only testable elements, and lists the header, nav and footer once instead of on every page.
+- **Script-first:** in the verification runs, 45 of 49 passes needed no model call.
+- **Low thinking for execution:** Sonnet 5.5 runs with `thinking: between_tools`; Opus 5.5 and Fable 5.1 run at effort `low`. The planner keeps the plan's effort, because test design is where quality comes from.
+- **Batched browser steps:** the investigator can send up to 8 steps per call.
+- Measured on the same 5-minute Junior shift on TodoMVC: **before**, 22 tests, 69 calls, $0.50; **after**, 53 tests, 29 calls, $0.31. That's 72% cheaper per test.
 
-### Claude API usage (`worker/ai.ts`)
+### Claude API usage
 - `@anthropic-ai/sdk` via `client.beta.messages.create` / `.parse`, with server-side refusal fallback (`fallbacks: "default"`).
-- Model and effort come from the plan. The report uses effort `medium`.
-- Prompt caching (`cache_control: ephemeral`) on execution calls. Page content is treated as data, not instructions.
-- **Every response's usage is saved** to `ai_usage`: input, output, cache read and cache write tokens, plus cost in USD from the table in §2. If a fallback answered on another model, that model's prices are used. Tracking failures are logged and never stop a shift.
+- Every response's usage (input, output, cache read, cache write; 1-hour writes billed at 2× input) is saved to `ai_usage` with its cost.
+- Page content and customer notes are data, never instructions. Notes can only set focus areas; they can't loosen the safety rules.
 
 ---
 
@@ -279,14 +283,32 @@ npm run lint && npm run typecheck && npm run check && npm run build
 
 ## 11. Security and safety
 
-- Zod validation on the server, backed by database constraints.
-- SSRF guard at booking and on every browser request. Production workers also need network isolation.
-- Customers must confirm permission. The tester uses obvious test data, never enters card details, avoids destructive actions and ignores instructions in page content. Security checks are passive (response headers only).
-- Stripe webhooks are signature-verified, and payment confirmation is idempotent.
-- The admin session is a signed, expiring, httpOnly cookie; sign-in is constant-time and slowed after a failure. The quote form has a honeypot field.
-- `npm run check` asserts the SSRF blocklist, the export grouping, token cost maths and agent windows.
-
----
+- **Input:**
+  - Zod validation on the server, backed by database constraints.
+  - The URL is normalised and has no credentials.
+  - `Object.hasOwn` guards query parameters, so `?plan=constructor` can't create NaN prices.
+- **SSRF** (the worker opens customer-supplied URLs):
+  - Requests to private or reserved addresses are aborted. That includes IPv6, NAT64, 6to4, carrier-grade NAT and multicast ranges, with a 30-second DNS cache.
+  - Top-level navigation off the booked site is aborted.
+  - WebSockets are checked, and service workers are blocked.
+  - Chromium follows redirects without asking our route handler, so **every response's actual server IP is checked**. If anything came from a private address, the browser session is tainted and the tester refuses to read it: no snapshot to Claude, no screenshot, no text.
+  - This was verified with a real redirect to a local "secret" server: without the guard the secret was readable; with it, the read was refused.
+  - **The request itself can still reach the internal server blind**, so production workers must run with network egress limited to the public internet.
+- **Abuse:**
+  - Rate limits on bookings, trials, quote requests and admin sign-in.
+  - A global daily trial cap.
+  - One trial per mailbox and per domain.
+- **Payments:** the webhook signature is verified, `markRunPaid` is idempotent, and the return-page check only uses the shift's own session.
+- **Admin:**
+  - `ADMIN_PASSWORD` must be at least 16 characters.
+  - The session cookie is signed with a scrypt-derived key, not the password. It's httpOnly, SameSite=Strict, path `/admin` and expires after 12 hours.
+  - Sign-in is limited to 10 attempts per IP per 15 minutes.
+- **Output:**
+  - React escaping everywhere.
+  - Playwright export comments strip all JavaScript line terminators, including U+2028 and U+2029.
+  - Email subjects are single-line, and logs never contain names or subjects.
+- **Headers:** CSP (`frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`), X-Frame-Options, nosniff, Referrer-Policy (`no-referrer` on `/runs`), HSTS and Permissions-Policy, with `X-Powered-By` removed.
+- `npm run check` asserts the SSRF ranges, the injection defence, trial keys, token costs, agent windows and the export.
 
 ## 12. Status
 
@@ -297,13 +319,18 @@ npm run lint && npm run typecheck && npm run check && npm run build
 - The booking form with four plans.
 - The custom quote form submitting.
 - The admin sign-in (wrong password rejected, secure cookie) and the dashboard showing usage, cost and requests.
-- The free-trial rules.
+- The free-trial rules: normalised URLs, `www.` and `+tag` duplicates refused, and the per-IP limit counted on real trials.
+- Security headers, crafted query parameters, the redirect-to-private SSRF guard (live test), and the WebSocket and off-site blocks.
+- **Real AI shifts:**
+  - Junior (Sonnet 5.5) on TodoMVC: 53 tests, $0.31 for 5 minutes.
+  - Senior (Opus 5.5) on the-internet.herokuapp.com: it found the real HTTP 500 bugs, correctly blocked 401 pages, and third-party noise was no longer reported. About $0.46 for 5 minutes.
+  - All three models respond, and token logging works.
 - Lint, typecheck, self-check and the production build.
 
 **Not yet verified:**
-- The live AI loop, because no `ANTHROPIC_API_KEY` has been configured. That includes the planner and executor on all three models, and real token logging.
-- The axe and web-vitals audits inside a real shift.
-- Stripe with test keys, and Resend.
+- Fable 5.1 (Principal) in a full shift; only its API access was checked.
+- Stripe with test keys, and Resend delivery to customers (that needs a verified domain).
+- Behaviour on large real sites with logins, cookie walls and heavy JavaScript.
 
 ---
 

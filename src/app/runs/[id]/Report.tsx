@@ -66,6 +66,8 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
     .sort((a, b) => SEVERITY_ORDER[a.severity ?? "minor"] - SEVERITY_ORDER[b.severity ?? "minor"]);
   const notReached = count("pending") + count("running");
   const verdict = releaseVerdict(bugs);
+  const features = run.strategy?.features ?? [];
+  const covered = features.filter((f) => cases.some((c) => c.feature === f.id && c.status !== "pending")).length;
   const score = report?.score ?? 0;
 
   return (
@@ -101,6 +103,11 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
           <p className="mt-1 text-sm" style={{ color: verdict.color }}>
             Release: {verdict.note}
           </p>
+          {features.length > 0 && (
+            <p className="mt-1 font-mono text-xs text-graphite">
+              Coverage: {covered} of {features.length} features tested
+            </p>
+          )}
           {report?.summary.split(/\n\s*\n/).map((p, i) => (
             <p key={i} className="mt-4 leading-relaxed">
               {p}
@@ -184,8 +191,8 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
           <div>
             <h2 className="font-display text-xl font-semibold tracking-tight">What works well</h2>
             <ul className="mt-4 space-y-3">
-              {report.strengths.map((s) => (
-                <li key={s} className="flex gap-3 leading-relaxed">
+              {report.strengths.map((s, i) => (
+                <li key={i} className="flex gap-3 leading-relaxed">
                   <span aria-hidden className="font-mono text-pass">
                     ✓
                   </span>
@@ -198,7 +205,7 @@ export function Report({ run, cases }: { run: Run; cases: TestCase[] }) {
             <h2 className="font-display text-xl font-semibold tracking-tight">Fix first</h2>
             <ol className="mt-4 space-y-3">
               {report.recommendations.map((r, i) => (
-                <li key={r} className="flex gap-3 leading-relaxed">
+                <li key={i} className="flex gap-3 leading-relaxed">
                   <span className="font-mono text-dev">{i + 1}</span>
                   {r}
                 </li>

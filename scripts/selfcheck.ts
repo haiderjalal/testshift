@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { agentWindows } from "@/lib/agents";
 import type { TestCase } from "@/lib/db";
 import { tokenCost } from "@/lib/plans";
-import { isPublicHost } from "@/lib/net";
+import { emailKey, isPrivateIp, isPublicHost, siteKey } from "@/lib/net";
 import { buildSpec } from "@/lib/spec";
 
 /** Smallest checks for the two paths that must not silently break: the SSRF guard and the spec export. */
@@ -41,6 +41,8 @@ async function main(): Promise<void> {
 
   // Token cost: 1M input + 1M output on Opus 5.5 is $4 + $20.
   assert.equal(tokenCost("claude-opus-5-5", { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0 }), 24);
+  // 1-hour cache writes are billed at 2× input ($8/M on Opus 5.5), 5-minute writes at 1.25× ($5/M).
+  assert.equal(tokenCost("claude-opus-5-5", { input: 0, output: 0, cacheRead: 0, cacheWrite: 1_000_000, cacheWrite1h: 1_000_000 }), 13);
   // Agent windows cover the whole shift, in order, without gaps.
   const windows = agentWindows(0, 1000);
   assert.deepEqual(windows.map((w) => w.agent.id), ["dev", "staging", "uat", "prod"]);
@@ -54,6 +56,25 @@ async function main(): Promise<void> {
   assert.match(spec, /page\.goBack\(\);/);
   assert.match(spec, /BUG \(major\): Nothing happens/);
   assert.doesNotMatch(spec, /#4/, "tests that never ran are not exported");
+
+  // Code injection: a line separator in the booked URL or in model-written text must not escape a comment.
+  const LS = String.fromCharCode(0x2028);
+  const hostile = buildSpec(`https://site.test/${LS}require("child_process")//`, [
+    { ...failing, actual: `broken${LS}globalThis.PWNED = 1`, expected: `ok${LS}process.exit(1)` },
+  ]);
+  for (const line of hostile.split(new RegExp(`[${String.fromCharCode(13, 10, 0x2028, 0x2029)}]`))) {
+    if (/require\(|PWNED|process\.exit/.test(line)) assert.ok(line.trim().startsWith("//"), `payload escaped a comment: ${line}`);
+  }
+
+  // Trial keys: one per mailbox and per registrable domain.
+  assert.equal(emailKey("A.B+promo@GMAIL.com"), "ab@gmail.com");
+  assert.equal(emailKey("qa+1@example.com"), "qa@example.com");
+  assert.equal(siteKey("shop.example.com"), "example.com");
+  assert.equal(siteKey("www.example.co.uk."), "example.co.uk");
+  for (const ip of ["169.254.169.254", "64:ff9b::7f00:1", "2002:7f00:1::", "198.18.0.1", "::127.0.0.1", "fe80::1"]) {
+    assert.equal(isPrivateIp(ip), true, `${ip} must be private`);
+  }
+  assert.equal(isPrivateIp("8.8.8.8"), false);
 
   console.log("selfcheck passed");
 }

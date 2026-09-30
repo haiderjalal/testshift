@@ -14,7 +14,7 @@ const input =
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="mt-2 text-sm text-fail">
+    <p id={id} role="alert" className="mt-2 text-sm text-fail">
       {message}
     </p>
   );
@@ -64,7 +64,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
         <FieldError id="url-error" message={errors.url} />
       </div>
 
-      <fieldset>
+      <fieldset aria-invalid={Boolean(errors.plan)} aria-describedby={errors.plan ? "plan-error" : undefined}>
         <legend className="font-medium">Plan</legend>
         <FieldError id="plan-error" message={errors.plan} />
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -98,7 +98,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift }: Props) {
         </p>
       </fieldset>
 
-      <fieldset>
+      <fieldset aria-invalid={Boolean(errors.hours)} aria-describedby={errors.hours ? "hours-error" : undefined}>
         <legend className="font-medium">Shift length</legend>
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[auto_repeat(6,minmax(0,1fr))]">
           <label className={`${chip} col-span-3 px-4 whitespace-nowrap sm:col-span-1 has-[:not(:checked)]:border-pass/50 has-[:not(:checked)]:text-pass`}>

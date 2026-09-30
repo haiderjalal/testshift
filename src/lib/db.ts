@@ -39,6 +39,12 @@ export interface SitePage {
   issues: string[];
 }
 
+/** The shift's test strategy: the site's features ranked by risk, written once and shared by all four agents. */
+export interface Strategy {
+  summary: string;
+  features: { id: string; name: string; url: string; risk: "high" | "medium" | "low"; what_to_test: string }[];
+}
+
 export interface RunReport {
   score: number;
   summary: string;
@@ -60,6 +66,7 @@ export interface Run {
   activity: string | null;
   agent: AgentId | null;
   site_map: SitePage[] | null;
+  strategy: Strategy | null;
   report: RunReport | null;
   error: string | null;
   started_at: Date | null;
@@ -81,7 +88,18 @@ export const BROWSER_ACTIONS = [
   "expect_visible",
   "expect_text",
   "expect_url",
+  "expect_hidden",
+  "expect_value",
 ] as const;
+
+/** Actions that check something rather than do something; a script must contain at least one to count as a test. */
+export const ASSERTIONS: readonly BrowserAction["action"][] = [
+  "expect_visible",
+  "expect_text",
+  "expect_url",
+  "expect_hidden",
+  "expect_value",
+];
 
 export interface BrowserAction {
   action: (typeof BROWSER_ACTIONS)[number];
@@ -107,6 +125,8 @@ export interface TestCase {
   id: string;
   seq: number;
   agent: AgentId;
+  /** Feature id from the strategy (e.g. "F3"); null for automated checks. */
+  feature: string | null;
   title: string;
   category: (typeof CATEGORIES)[number];
   priority: "high" | "medium" | "low";
@@ -117,6 +137,9 @@ export interface TestCase {
   status: CaseStatus;
   actual: string | null;
   severity: Severity | null;
+  /** Browser steps the planner scripted; run without the model when they all pass. */
+  script: BrowserAction[];
+  /** Browser steps actually performed; exported as Playwright code. */
   actions: BrowserAction[];
   has_screenshot: boolean;
   finished_at: Date | null;

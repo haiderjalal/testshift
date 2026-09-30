@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { adminConfigured, isAdmin } from "@/lib/admin";
+import { adminConfigured, isAdmin, MIN_PASSWORD_LENGTH } from "@/lib/admin";
 
 import { LoginForm } from "./LoginForm";
 
@@ -19,7 +19,7 @@ export default async function AdminLoginPage() {
       ) : (
         <p className="mt-6 rounded-xl border border-rule bg-card p-4 text-graphite">
           Set <code className="font-mono text-ink">ADMIN_PASSWORD</code> in <code className="font-mono text-ink">.env.local</code>{" "}
-          to turn the dashboard on, then restart the server.
+          to a password of at least {MIN_PASSWORD_LENGTH} characters to turn the dashboard on, then restart the server.
         </p>
       )}
     </main>
