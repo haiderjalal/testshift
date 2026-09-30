@@ -20,6 +20,7 @@ This revision hardens those paths and adds repeatable regressions. It is **not p
 | High | Browser response-only SSRF defense still allowed blind private contact | DNS-pinned HTTP/CONNECT proxy; private sentinel received zero requests across decimal/hex/IPv6/localhost probes |
 | High | Concurrent trial/rate checks could over-admit | Atomic UPSERT limiter and advisory-lock trial reservation transaction; burst/rollback tests |
 | High | Stale workers could still write test results | Transactional claim fencing for run/case writes; stale, completed and rollback tests; browser closes on claim loss |
+| High | A manually created beta order could start before Wise payment was verified | Database-enforced quote/payment/start gates, exact 10× quote snapshots, unique receipt references and separate authenticated admin confirmation/start actions |
 | High | Missing/blocked checks inflated confidence | Completed-only coverage, deterministic score, explicit Incomplete verdict; empty-report browser regression |
 | Medium | Failed assertions missing from exported suites; assertion-free tests exported | Persist failure assertion and exact original trace; omit non-replayable observations; export regressions |
 | Medium | Unbounded model spending/retries/context growth | Per-run reservation budget, timeouts, smaller task-specific outputs, bounded history and retries, deterministic fallback report |
@@ -32,13 +33,13 @@ This revision hardens those paths and adds repeatable regressions. It is **not p
 
 ## Automated evidence
 
-- **48 worker/security/database/quality regressions passed**, using `node --import tsx --test tests/*.test.ts`.
+- **56 worker/security/database/quality regressions passed**, using `node --import tsx --test tests/*.test.ts`.
 - `scripts/selfcheck.ts` passed, including export-comment injection, SSRF, trial keys, token accounting and phase windows.
 - TypeScript, ESLint and optimized Next.js production build passed.
 - Dependency installation audit reported zero known vulnerabilities. This is not proof of absence of vulnerabilities.
-- **24 desktop/mobile product checks passed** on a fresh production server and in-memory PGlite with payment/email/model credentials disabled (47.3 seconds). Total automated regressions: **72 passed, zero failed**.
+- **28 desktop/mobile product checks passed** on a fresh production server and in-memory PGlite with payment/email/model credentials disabled. Total automated regressions: **84 passed, zero failed**.
 
-The product suite covers navigation and overflow; required fields and input retention; private URLs and embedded credentials; crafted query parameters; trial creation/duplicates; quote form; admin credentials/cookie/logout; malformed cookie; cross-origin action rejection; incomplete report/spec privacy; malformed IDs; unsigned webhook; defensive headers; and serious/critical automated accessibility findings on booking/quote pages.
+The product suite covers navigation and overflow; required fields and input retention; private URLs and embedded credentials; crafted query parameters; trial creation/duplicates; fixed Wise quote snapshots; exact-payment and separate-start enforcement; admin repricing without changing existing orders; unpublished-plan quoting; admin credentials/cookie/logout; malformed cookie; cross-origin action rejection; incomplete report/spec privacy; malformed IDs; unsigned webhook; defensive headers; and serious/critical automated accessibility findings on booking/quote pages.
 
 PGlite verifies PostgreSQL function/transaction behavior, not true production multi-connection contention: it serializes work internally. The lease regression uses the production transaction helper through a real PostgreSQL wire connection, but does not simulate a full multi-worker network partition.
 
@@ -77,13 +78,13 @@ Code protections include bounded database pools (default five connections per pr
 
 ## Deployment checklist and remaining risks
 
-1. **Apply `20261006000000_qa_integrity.sql` before deploying web/worker changes.** This adds atomic limits and replay/timing fields. All migrations and migration reapplication were tested in disposable databases; production was not changed. Back up and rehearse on staging first. Stop old workers during rollout so unfenced legacy writes cannot race the new worker.
+1. **Apply both `20261006000000_qa_integrity.sql` and `20261007000000_manual_beta_orders.sql` before deploying web/worker changes.** These add atomic QA integrity controls plus fixed Wise quote/payment/start fields and constraints. All migrations and migration reapplication were tested in disposable databases; production was not changed. Back up and rehearse on staging first. Stop old workers during rollout so unfenced legacy writes cannot race the new worker.
 2. Set budget/pool variables from `.env.example`. Verify model rates against the actual provider account and configure provider-level spend limits. Local reservations are not a durable billing ledger across crashes or unrecorded calls.
 3. Retain OS/container public-only egress restrictions; keep Chromium and dependencies patched. The application proxy is defense in depth, not a complete sandbox. Plain WS and off-origin login flows are unsupported and must be reported as gaps.
 4. Self-hosted deployments need a proxy that overwrites IP headers and blocks direct origin access before enabling `TRUST_PROXY_HEADERS=1`. Otherwise visitors share a limited bucket. On Vercel, the platform's overwritten forwarding header is used ([platform documentation](https://vercel.com/docs/headers/request-headers)).
 5. Trial-key normalization now separates private-suffix tenants. Existing stored trial keys are not automatically rewritten; inspect legacy records and uniqueness conflicts before any backfill. Email/IP/global limits remain active.
 6. **Do not promise destructive live-site testing.** DELETE is blocked, but semantic side effects through POST/GET cannot be identified reliably from prompts. Add explicit staging consent, request-level mutation policy, submission limits, test accounts and reset/cleanup support before expanding scope.
-7. Verify Stripe test checkout, signed/replayed/async webhooks and Resend delivery in dedicated sandboxes. This audit verified unsigned-event rejection, not end-to-end settlement, refunds or email deliverability.
+7. Keep `STRIPE_ENABLED=0` during the manual beta. Verify the Wise receipt outside TestShift, then record its unique reference and exact USD amount before authorizing a start. The application does not query Wise, issue refunds or prove settlement. Verify Resend delivery separately; a Resend account login does not by itself prove that the onboarding inbox can receive mail.
 8. Run true Postgres multi-worker claim/kill/restart/partition tests and bounded staging load/soak tests. The local small-burst checks do not establish production concurrency or long-run memory stability.
 9. Establish a multi-site golden defect corpus and repeated model evaluations as described in [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md). Track recall/false positives and risk/dimension gaps, not just number of generated tests.
 10. Decide customer policy for budget/time-limited or blocked shifts, unused time/refunds, screenshot retention and revocable/authenticated report access. Current reports are UUID capability links, not customer accounts.

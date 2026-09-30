@@ -6,11 +6,13 @@ Full product context: [docs/PRODUCT_CONTEXT.md](docs/PRODUCT_CONTEXT.md). Plan a
 
 Current hardening results and release limitations: [QA audit](docs/QA_AUDIT.md). Detailed test-generation/execution workflow and cost controls: [Agent workflow](docs/AGENT_WORKFLOW.md).
 
+Current beta billing: [Wise onboarding and 10× hourly pricing](docs/BETA_BILLING.md). Stripe is parked. Paid orders require manual payment confirmation and a separate admin start.
+
 Owner dashboard: set `ADMIN_PASSWORD` in `.env.local`, then open `/admin` to track Claude token usage, cost and margin.
 
 ## Stack
 
-Next.js 16 (App Router) · Tailwind CSS v4 · Postgres (Supabase) · Playwright · Claude API (`@anthropic-ai/sdk`) · Stripe Checkout · Resend
+Next.js 16 (App Router) · Tailwind CSS v4 · Postgres (Supabase) · Playwright · Claude API (`@anthropic-ai/sdk`) · manual Wise payments · Resend (outgoing reports)
 
 ```
 src/app/            pages: landing, /hire (booking), /runs/[id] (live shift + report), Stripe webhook
@@ -37,9 +39,9 @@ supabase/migrations database schema
    npm run worker
    ```
 
-Without Stripe keys (in dev only), bookings skip payment and are queued straight away. Set `SHIFT_MINUTES_PER_HOUR=2` to make a booked hour last two minutes while you try it.
+Free trials queue automatically. Paid orders always wait for Wise payment confirmation and manual start in `/admin`, including local development. Set `SHIFT_MINUTES_PER_HOUR=2` only for development fixtures to make a booked hour last two minutes.
 
-To test payments locally, use Stripe test keys and run `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+Publish each plan's estimated token cost per hour in `/admin`; the customer quote is exactly 10× that amount. No hourly benchmark is invented: unpublished plans accept quote requests. New-order prices are snapshotted and cannot change retroactively. Stripe keys are not required; leave `STRIPE_ENABLED=0`.
 
 ## Checks
 
@@ -60,9 +62,9 @@ Optional paid synthetic-agent evaluation: `node --env-file-if-exists=.env.local 
 
 ## Deploy
 
-Apply `supabase/migrations/20261006000000_qa_integrity.sql` before deploying this web/worker revision. It adds atomic trial/rate limits, replay evidence and persisted phase timing. This change has only been applied to disposable test databases during the audit, not to production.
+Apply pending migrations through `supabase/migrations/20261007000000_manual_beta_orders.sql` before deploying this web/worker revision. They add atomic limits, replay/timing fields, fixed quotes and payment/start authorization. These changes have only been applied to disposable test databases, not to production.
 
-- **Web**: Vercel. Set every variable from `.env.example` except `SHIFT_MINUTES_PER_HOUR`. Add a Stripe webhook for `checkout.session.completed` pointing to `/api/stripe/webhook`.
+- **Web**: Vercel. Set the required variables from `.env.example` except `SHIFT_MINUTES_PER_HOUR`. Leave Stripe disabled for beta; no Stripe account/key/webhook is needed.
 - **Worker**: any host that runs a long-lived container, such as Fly.io or Railway, using the `mcr.microsoft.com/playwright` base image. Run `npm run worker`, and restrict its network egress to the public internet. Run more copies to test more sites in parallel.
 
-The worker additionally uses a DNS-pinning forward proxy. Keep the host firewall: the application proxy is not an OS/browser sandbox. AI spend defaults to $2 per trial and 25% of paid revenue, based on configured token rates; provider billing caps remain necessary. For self-hosted web servers, configure `TRUST_PROXY_HEADERS` only behind an IP-header-overwriting proxy with direct origin access blocked.
+The worker additionally uses a DNS-pinning forward proxy. Keep the host firewall: the application proxy is not an OS/browser sandbox. AI spend defaults to $2 per trial and 10% of the paid order's fixed quote, based on configured token rates; provider billing caps remain necessary. For self-hosted web servers, configure `TRUST_PROXY_HEADERS` only behind an IP-header-overwriting proxy with direct origin access blocked.

@@ -27,7 +27,8 @@ interface Plan {
   focus: string;
 }
 
-/** Hourly plans. `model`, `effort`, `checks` and `focus` steer the AI tester; the rest is shown to customers. */
+/** Capabilities by tier. `rate` is a LEGACY budget fallback only. New beta prices live in beta_plan_prices;
+ * customer quotes are snapshotted per order at exactly 10x the owner-published estimated token cost. */
 export const PLANS = {
   junior: {
     name: "Junior QA",

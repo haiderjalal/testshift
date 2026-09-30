@@ -44,7 +44,7 @@ test("crafted plan and URL parameters neither crash nor execute HTML", async ({ 
   expect(await page.evaluate(() => "PWNED" in window)).toBe(false);
   await page.getByText("Senior QA", { exact: true }).click();
   await page.getByText("2h", { exact: true }).click();
-  await expect(page.getByRole("button", { name: "Book 2-hour shift · $100" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request 2-hour shift · $40.00" })).toBeVisible();
 });
 
 test("trial booking creates a queued run and duplicate site is rejected", async ({ page }, info) => {

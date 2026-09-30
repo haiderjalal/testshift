@@ -5,6 +5,10 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import postgres from "postgres";
 import { LeaseLostError, withRunLease } from "../worker/lease";
+import { confirmManualPayment, createManualOrder, loadBetaPrices, quoteManualOrder, saveBetaPrice, startManualOrder } from "../src/lib/beta-orders";
+import { parseUsd, quoteFromCost } from "../src/lib/beta-pricing";
+import { markRunPaid } from "../src/lib/payments";
+import { loadDashboard } from "../src/app/admin/data";
 
 const db = new PGlite();
 let socket: PGLiteSocketServer;
@@ -68,4 +72,83 @@ test("only the current running worker lease can write, and failed writes roll ba
   assert.equal((await sql`select notes from runs where id = ${id}`)[0].notes, "owned");
   await sql`update runs set status = 'completed' where id = ${id}`;
   await assert.rejects(withRunLease(id, current, async () => undefined), LeaseLostError);
+});
+
+const order = { url: "https://8.8.8.8/", email: "beta@example.com", plan: "junior" as const, hours: 2, notes: "Test fixture" };
+let betaId: string;
+
+test("money parsing and 10x quotes use cents, rejecting invalid and fractional inputs", () => {
+  assert.equal(parseUsd("1"), 100); assert.equal(parseUsd("1.01"), 101);
+  assert.deepEqual(quoteFromCost(100, 120), { hourlyCents: 1000, totalCents: 2000 });
+  for (const value of ["", "0", "-1", "NaN", "Infinity", "1e2", "0.001", "1.234", "01", "1,000"]) assert.throws(() => parseUsd(value));
+  assert.throws(() => quoteFromCost(1.5, 60)); assert.throws(() => quoteFromCost(100, 90));
+});
+
+test("manual orders wait unquoted until an admin sets a fixed 10x quote", async () => {
+  betaId = await createManualOrder(order, null);
+  await assert.rejects(startManualOrder(betaId), /Confirm/);
+  await assert.rejects(confirmManualPayment(betaId, 2000, "WISE-first"), /quote/);
+  await quoteManualOrder(betaId, 100);
+  const [r] = await sql`select * from runs where id = ${betaId}`;
+  assert.equal(r.status, "pending_payment"); assert.equal(r.quoted_hourly_cents, 1000); assert.equal(r.quoted_total_cents, 2000);
+  assert.equal(r.started_at, null); assert.equal(r.deadline_at, null);
+  await assert.rejects(quoteManualOrder(betaId, 200), /cannot be repriced/);
+});
+
+test("published rates snapshot new orders and stale/tampered quotes cannot silently charge", async () => {
+  await saveBetaPrice("junior", 100);
+  assert.equal((await loadBetaPrices()).junior, 1000);
+  const id = await createManualOrder(order, 1000);
+  await saveBetaPrice("junior", 200);
+  assert.equal((await sql`select quoted_total_cents from runs where id = ${id}`)[0].quoted_total_cents, 2000);
+  await assert.rejects(createManualOrder(order, 1000), /Pricing changed/);
+  await assert.rejects(createManualOrder(order, 1), /Pricing changed/);
+  await assert.rejects(createManualOrder(order, null), /Pricing changed/);
+  await assert.rejects(saveBetaPrice("constructor", 100), /Unknown/);
+});
+
+test("payment confirmation requires exact quote and does not enqueue or start time", async () => {
+  await assert.rejects(confirmManualPayment(betaId, 1000, "WISE-first"), /must match/);
+  await assert.rejects(confirmManualPayment(betaId, 2001, "WISE-first"), /must match/);
+  await confirmManualPayment(betaId, 2000, "WISE-first");
+  await confirmManualPayment(betaId, 2000, "WISE-first");
+  const [r] = await sql`select * from runs where id = ${betaId}`;
+  assert.equal(r.status, "paid"); assert.equal(r.amount_received_cents, 2000);
+  assert.ok(r.payment_confirmed_at); assert.equal(r.start_authorized_at, null);
+  assert.equal(r.started_at, null); assert.equal(r.deadline_at, null);
+  await assert.rejects(confirmManualPayment(betaId, 2000, "OTHER-reference"), /already/);
+});
+
+test("parallel/manual start retries cannot reset time or restart completed work", async () => {
+  await Promise.all([startManualOrder(betaId), startManualOrder(betaId)]);
+  const [before] = await sql`select * from runs where id = ${betaId}`;
+  assert.equal(before.status, "queued"); assert.ok(before.start_authorized_at); assert.equal(before.started_at, null);
+  await sql`update runs set status = 'completed', started_at = now() - interval '2 hours', deadline_at = now(), completed_at = now() where id = ${betaId}`;
+  await startManualOrder(betaId);
+  const [after] = await sql`select * from runs where id = ${betaId}`;
+  assert.equal(after.status, "completed"); assert.deepEqual(after.start_authorized_at, before.start_authorized_at);
+});
+
+test("receipt reuse and direct unpaid enqueue fail closed", async () => {
+  const id = await createManualOrder(order, 2000);
+  await assert.rejects(confirmManualPayment(id, 4000, "wise-FIRST"), /duplicate key/);
+  await assert.rejects(sql`update runs set status = 'queued' where id = ${id}`, /runs_beta_payment_check/);
+  assert.equal((await sql`select status from runs where id = ${id}`)[0].status, "pending_payment");
+  const previous = process.env.STRIPE_ENABLED;
+  try { process.env.STRIPE_ENABLED = "1"; await markRunPaid(id, "cs_ignored_manual_order"); }
+  finally { if (previous === undefined) delete process.env.STRIPE_ENABLED; else process.env.STRIPE_ENABLED = previous; }
+  assert.equal((await sql`select status from runs where id = ${id}`)[0].status, "pending_payment");
+});
+
+test("dashboard counts confirmed receipts, not unpaid bookings or today's price", async () => {
+  const data = await loadDashboard("all");
+  assert.equal(data.revenue, 20);
+  assert.equal(data.runs.find((r) => r.id === betaId)?.revenue, 20);
+  assert.equal(Object.keys(data.planAverages).length, 0, "Short trials are not hourly pricing samples");
+});
+
+test("manual order migration can be reapplied without resetting quotes or payment state", async () => {
+  await db.exec(await readFile("supabase/migrations/20261007000000_manual_beta_orders.sql", "utf8"));
+  const [r] = await sql`select status, quoted_total_cents, amount_received_cents from runs where id = ${betaId}`;
+  assert.equal(r.status, "completed"); assert.equal(r.quoted_total_cents, 2000); assert.equal(r.amount_received_cents, 2000);
 });
