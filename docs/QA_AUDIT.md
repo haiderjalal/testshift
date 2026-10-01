@@ -89,4 +89,4 @@ Code protections include bounded database pools (default five connections per pr
 9. Establish a multi-site golden defect corpus and repeated model evaluations as described in [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md). Track recall/false positives and risk/dimension gaps, not just number of generated tests.
 10. Decide customer policy for budget/time-limited or blocked shifts, unused time/refunds, screenshot retention and revocable/authenticated report access. Current reports are UUID capability links, not customer accounts.
 
-No production configuration was changed and no commit or deployment was created by this audit.
+No production configuration was changed and no commit or deployment was created by this audit
