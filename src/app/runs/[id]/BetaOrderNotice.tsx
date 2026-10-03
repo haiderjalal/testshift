@@ -13,7 +13,7 @@ export function BetaOrderNotice({ run }: { run: Run }) {
     <h2 className="font-display text-xl font-semibold">{run.status === "paid" ? "Payment confirmed — waiting for manual start" : run.status === "pending_payment" ? (quote ? "Awaiting Wise payment" : "Your order is waiting for a quote") : "Your prepaid beta order"}</h2>
     <p className="mt-3 break-all font-mono text-sm">Order reference: {run.id}</p>
     {quote && <p className="mt-3 text-lg">{money(run.quoted_total_cents!)} USD total · {money(run.quoted_hourly_cents!)}/hour · {formatDuration(run.minutes)}</p>}
-    <p className="mt-2 text-sm text-graphite">Fixed prepaid quote based on 10× estimated AI token cost. No subscription, automatic top-ups or extra token invoice.</p>
+    <p className="mt-2 text-sm text-graphite">Fixed prepaid quote. No subscription, automatic top-ups or extra invoices.</p>
     {run.status === "pending_payment" && <>
       <p className="mt-4">Email us with this order reference first. We&apos;ll confirm the quote and send you a Wise payment link. Wise tag: <strong>{BETA_CONTACT.wiseTag}</strong>.</p>
       <a href={mailto} className="mt-4 inline-block break-all text-dev underline">{BETA_CONTACT.email}</a>
