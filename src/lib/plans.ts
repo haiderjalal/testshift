@@ -85,10 +85,10 @@ export const PLANS = {
     rate: 150,
     model: "claude-fable-5-1",
     effort: "medium",
-    pitch: "Anthropic's most capable model on your release.",
+    pitch: "Our most capable agents on your release.",
     features: [
       "Everything in Lead QA",
-      "Runs on Claude Fable 5.1",
+      "Our most advanced personalized agents",
       "Security-header review",
       "Priority queue: your shift starts first",
     ],

@@ -36,8 +36,8 @@ const FAQS = [
     a: "The Dev agent tests each unit of your interface on its own through the browser: one field's validation, one button, one link. Unit tests against your source code need repository access, which is on our roadmap.",
   },
   {
-    q: "Which AI model tests my site?",
-    a: "Junior runs on Claude Sonnet 5.5, Senior and Lead on Claude Opus 5.5 (Lead at higher effort), and Principal on Claude Fable 5.1, Anthropic's most capable model.",
+    q: "Who tests my site?",
+    a: "We have personalized agents that work in the background and test your app. Higher plans use more advanced agents that reason more deeply, with Principal running our most capable ones.",
   },
   {
     q: "Is it safe to run on my live site?",
