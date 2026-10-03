@@ -15,7 +15,7 @@ export function Pricing({ prices }: { prices: BetaPrices }) {
       <p className="reveal mt-5 max-w-2xl text-lg text-graphite">
         Every plan runs all four agents. Higher plans use more advanced personalized agents and add automated audits.{" "}
         <span className="text-pass">Your first {TRIAL_MINUTES} minutes are free on any plan.</span>
-        {" "}Beta pricing is 10× estimated AI token cost per hour. Prepay a fixed quote by Wise after email onboarding; no subscription. Prices are estimates, not metered token invoices.
+        {" "}Prepay a fixed quote by Wise after email onboarding; no subscription.
       </p>
 
       <div className="mt-14 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">

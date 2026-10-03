@@ -25,7 +25,7 @@ const DELIVERABLES = [
 const FAQS = [
   {
     q: "How do I pay during the beta?",
-    a: "Request the hours you need, then email us with your order reference for onboarding and a Wise payment link. Your fixed hourly quote is 10 times our estimated AI token cost. We confirm payment and start your shift manually. No subscription, automatic top-up or surprise token invoice.",
+    a: "Request the hours you need, then email us with your order reference for onboarding and a Wise payment link. Your hourly quote is fixed before you pay. We confirm payment and start your shift manually. No subscription, automatic top-up or surprise invoice.",
   },
   {
     q: "Are there really four agents?",

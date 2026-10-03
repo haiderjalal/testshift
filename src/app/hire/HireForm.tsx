@@ -200,8 +200,8 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
           {trial
             ? "No card needed. One free shift per email address and website."
             : hourly !== undefined
-              ? `${shift} × ${money(hourly)}. Fixed prepaid quote based on 10× estimated AI token cost. Email us for a Wise payment link; we confirm payment and start your time manually.`
-              : "Request an hourly quote based on 10× estimated AI token cost. We confirm the price before you pay by Wise. Your timer does not start when you submit this form."}
+              ? `${shift} × ${money(hourly)}. Fixed prepaid quote. Email us for a Wise payment link; we confirm payment and start your time manually.`
+              : "Request an hourly quote. We confirm the price before you pay by Wise. Your timer does not start when you submit this form."}
         </p>
       </div>
     </form>
