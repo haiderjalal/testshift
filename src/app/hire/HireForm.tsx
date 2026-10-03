@@ -4,7 +4,7 @@ import { startTransition, useActionState, useState, type FormEvent } from "react
 
 import Link from "next/link";
 
-import { HOUR_OPTIONS, MODELS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
+import { HOUR_OPTIONS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
 import { money, type BetaPrices } from "@/lib/beta-pricing";
 
 import { bookShift, type BookingState } from "./actions";
@@ -90,7 +90,7 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
                 <span className="font-mono text-sm">{prices[id] === undefined ? "By quote" : `${money(prices[id]!)}/h`}</span>
               </span>
               <span className="mt-1 block text-sm text-graphite">{p.pitch}</span>
-              <span className="mt-2 block font-mono text-[11px] text-dev">{MODELS[p.model].label}</span>
+              <span className="mt-2 block font-mono text-[11px] text-dev">Personalized background agents</span>
             </label>
           ))}
         </div>
