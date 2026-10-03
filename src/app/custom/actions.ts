@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/email";
+import { appUrl, sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { allow, clientKey } from "@/lib/rateLimit";
 
@@ -74,7 +74,7 @@ export async function requestQuote(_prev: CustomState, formData: FormData): Prom
         "What they need:",
         details,
         "",
-        `Reply to this email to answer them, or see all requests at ${process.env.APP_URL ?? "http://localhost:3000"}/admin`,
+        `Reply to this email to answer them, or see all requests at ${appUrl()}/admin`,
       ].join("\n"),
     });
   }

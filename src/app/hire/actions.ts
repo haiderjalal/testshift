@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/email";
+import { appUrl, sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { emailKey, isPublicHost, siteKey } from "@/lib/net";
 import { createManualOrder, OrderError } from "@/lib/beta-orders";
@@ -96,7 +96,6 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
   // The booking is saved above, so a failed email never loses it; it is always on /admin.
   const owner = process.env.OWNER_EMAIL;
   if (owner) {
-    const appUrl = process.env.APP_URL ?? "http://localhost:3000";
     await sendEmail({
       to: owner,
       replyTo: email,
@@ -108,7 +107,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
         `Customer email: ${email}`,
         `Notes: ${notes || "-"}`,
         "",
-        `Order: ${appUrl}${destination}`,
+        `Order: ${appUrl()}${destination}`,
         "Reply to this email to answer the customer.",
       ].join("\n"),
     });

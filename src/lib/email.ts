@@ -3,6 +3,12 @@ import { errorMessage, log } from "./log";
 /** Both settings are needed to send; pages use this so they never promise an email that can't go out. */
 export const emailConfigured = (): boolean => Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 
+/** Public site address for links in emails: APP_URL, else Vercel's production domain, else local dev. */
+export function appUrl(): string {
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return process.env.APP_URL ?? (vercel ? `https://${vercel}` : "http://localhost:3000");
+}
+
 interface Email {
   to: string;
   subject: string;
