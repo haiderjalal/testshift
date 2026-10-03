@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { emailKey, isPublicHost, siteKey } from "@/lib/net";
 import { createManualOrder, OrderError } from "@/lib/beta-orders";
@@ -91,6 +92,26 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     }
     log("error", "Booking failed", { error: errorMessage(e) });
     return { message: "We couldn't start your booking. Please try again in a minute." };
+  }
+  // The booking is saved above, so a failed email never loses it; it is always on /admin.
+  const owner = process.env.OWNER_EMAIL;
+  if (owner) {
+    const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+    await sendEmail({
+      to: owner,
+      replyTo: email,
+      subject: `New ${trial ? "free trial" : "paid"} booking: ${PLANS[plan].name}`,
+      text: [
+        `Plan: ${PLANS[plan].name}`,
+        `Shift: ${trial ? `Free trial (${TRIAL_MINUTES} minutes)` : `${hours} hour(s)`}`,
+        `Website: ${url}`,
+        `Customer email: ${email}`,
+        `Notes: ${notes || "-"}`,
+        "",
+        `Order: ${appUrl}${destination}`,
+        "Reply to this email to answer the customer.",
+      ].join("\n"),
+    });
   }
   redirect(destination);
 }
