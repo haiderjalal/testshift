@@ -56,7 +56,10 @@ export function hasUnverifiedTransition(actions: BrowserAction[]): boolean {
   return false;
 }
 
-export function featureCoverage(cases: TestCase[], strategy: Strategy | null) {
+/** The fields scoring needs; the leaderboard loads only these. */
+export type ScoredCase = Pick<TestCase, "agent" | "feature" | "status" | "priority" | "severity">;
+
+export function featureCoverage(cases: ScoredCase[], strategy: Strategy | null) {
   return (strategy?.features ?? []).map((feature) => {
     const own = cases.filter((c) => c.feature === feature.id);
     return { ...feature, passed: own.filter((c) => c.status === "passed").length,
@@ -67,7 +70,7 @@ export function featureCoverage(cases: TestCase[], strategy: Strategy | null) {
   });
 }
 
-export function assessResults(cases: TestCase[], strategy: Strategy | null) {
+export function assessResults(cases: ScoredCase[], strategy: Strategy | null) {
   const evaluated = cases.filter(isEvaluated);
   const bugs = evaluated.filter((c) => c.status === "failed");
   const coverage = featureCoverage(cases, strategy);
@@ -84,7 +87,7 @@ export function assessResults(cases: TestCase[], strategy: Strategy | null) {
       : bugs.some((c) => c.severity === "major")
         ? { label: "Go with caution", note: "Major bugs should be fixed before release.", color: "var(--color-marker)" }
         : { label: "Go", note: "No critical or major bugs in the completed checks. Untested behavior may still contain defects.", color: "var(--color-pass)" };
-  const weight = (c: TestCase) => c.priority === "high" ? 3 : c.priority === "medium" ? 2 : 1;
+  const weight = (c: ScoredCase) => c.priority === "high" ? 3 : c.priority === "medium" ? 2 : 1;
   const total = evaluated.reduce((n, c) => n + weight(c), 0);
   const score = total ? Math.round(100 * evaluated.filter((c) => c.status === "passed").reduce((n, c) => n + weight(c), 0) / total) : null;
   return { verdict, coverage, gaps, score, evaluated: evaluated.length };

@@ -21,7 +21,7 @@ const BUSY_MESSAGE = "Too many bookings from your network right now. Please try 
 
 export interface BookingState {
   message?: string;
-  errors?: Partial<Record<"url" | "email" | "plan" | "hours" | "notes" | "consent", string>>;
+  errors?: Partial<Record<"url" | "email" | "company" | "plan" | "hours" | "notes" | "consent", string>>;
 }
 const bookingSchema = z.object({
   url: z
@@ -32,6 +32,10 @@ const bookingSchema = z.object({
   // "trial" is the free first shift; otherwise a number of paid hours.
   hours: z.enum(["trial", ...HOUR_OPTIONS.map(String)], { error: "Choose how long the shift should be." }),
   notes: z.string().max(2000, { error: "Keep notes under 2,000 characters." }),
+  // Shown publicly on the leaderboard, so no control characters or line breaks.
+  company: z.string().max(80, { error: "Keep the name under 80 characters." })
+    .regex(/^[^\p{Cc}]*$/u, { error: "Use letters, numbers and punctuation only." }),
+  leaderboard: z.literal("on").optional(),
   consent: z.literal("on", { error: "Confirm you're allowed to test this site." }),
 });
 
@@ -43,6 +47,8 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     hours: formData.get("hours"),
     notes: String(formData.get("notes") ?? "").trim(),
     consent: formData.get("consent"),
+    company: String(formData.get("company") ?? "").trim(),
+    leaderboard: formData.get("leaderboard") ?? undefined,
   };
   const parsed = bookingSchema.safeParse(raw);
   if (!parsed.success) {
@@ -52,7 +58,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     return { errors };
   }
 
-  const { email, plan, hours, notes } = parsed.data;
+  const { email, plan, hours, notes, company, leaderboard } = parsed.data;
   const trial = hours === "trial";
   // Store the normalised form: lowercase scheme and host, no trailing dot, percent-encoded characters.
   const target = new URL(parsed.data.url);
@@ -73,8 +79,13 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     const quoted = String(formData.get("hourlyQuote") ?? "");
     const expectedHourly = quoted === "" ? null : Number(quoted);
     if (!trial && expectedHourly !== null && (!/^\d+$/.test(quoted) || !Number.isSafeInteger(expectedHourly))) return { message: "Invalid quote. Refresh the page." };
-    destination = trial ? await createTrial({ ...booking, visitor })
-      : `/runs/${await createManualOrder({ ...booking, hours: Number(hours) }, expectedHourly)}`;
+    const runId = trial ? await createTrial({ ...booking, visitor })
+      : await createManualOrder({ ...booking, hours: Number(hours) }, expectedHourly);
+    // The booking already exists; failing to save listing details must not make the customer book twice.
+    await db()`update runs set company_name = ${company || null}, leaderboard_opt_in = ${leaderboard === "on"},
+      leaderboard_site = ${siteKey(target.hostname)} where id = ${runId}`
+      .catch((e: unknown) => log("error", "Saving leaderboard details failed", { error: errorMessage(e) }));
+    destination = `/runs/${runId}`;
   } catch (e) {
     if (e instanceof OrderError) return { message: e.message };
     if (e instanceof postgres.PostgresError && trial && e.message === "trial_ip_limit") {
@@ -105,6 +116,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
         `Shift: ${trial ? `Free trial (${TRIAL_MINUTES} minutes)` : `${hours} hour(s)`}`,
         `Website: ${url}`,
         `Customer email: ${email}`,
+        `Company: ${company || "-"} · Leaderboard: ${leaderboard === "on" ? "yes" : "no"}`,
         `Notes: ${notes || "-"}`,
         "",
         `Order: ${appUrl()}${destination}`,
@@ -131,5 +143,5 @@ async function createTrial(b: Booking & { visitor: string }): Promise<string> {
   const [run] = await db()<{ id: string }[]>`
     select create_trial(${b.url}, ${b.email}, ${b.plan}, ${TRIAL_MINUTES}, ${b.notes},
       ${emailKey(b.email)}, ${siteKey(new URL(b.url).hostname)}, ${b.visitor}, ${MAX_TRIALS_PER_DAY}, ${TRIALS_PER_IP_PER_DAY}) as id`;
-  return `/runs/${run.id}`;
+  return run.id;
 }
