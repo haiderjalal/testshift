@@ -476,6 +476,71 @@ html[data-stage="overview"] canvas[data-ready="true"] {
   }
 }
 
+/* ------------------------------------------------------------------ leaderboard */
+
+/* Podium blocks spring up from the floor, 2nd → 3rd → 1st, so the winner lands last. */
+@keyframes podium-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(80px) scale(0.94);
+    filter: blur(8px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.01);
+    filter: blur(0);
+  }
+}
+.podium-rise {
+  animation: podium-rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(300ms + var(--d, 0) * 180ms);
+}
+.podium-card {
+  background:
+    radial-gradient(28rem 14rem at 50% 0%, color-mix(in srgb, var(--place) 18%, transparent), transparent 70%),
+    color-mix(in srgb, var(--color-card) 72%, transparent);
+}
+/* A slow beam of light sweeps down each podium card. */
+@keyframes beam {
+  from {
+    transform: translateY(-120%);
+  }
+  to {
+    transform: translateY(260%);
+  }
+}
+.podium-beam {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 40%;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--place) 14%, transparent), transparent);
+  animation: beam 5s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0) * 900ms);
+  pointer-events: none;
+}
+
+@keyframes rank-in {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+.rank-row {
+  animation: rank-in 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(900ms + var(--d, 0) * 70ms);
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.score-bar {
+  transform-origin: left;
+  animation: bar-grow 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 1s;
+}
+
 /* ------------------------------------------------------------------ reduced motion: everything still, nothing hidden */
 
 @media (prefers-reduced-motion: reduce) {

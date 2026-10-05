@@ -100,6 +100,9 @@ function safeUrl(url: string, origin: string): string | null {
 
 // ---------------------------------------------------------------- shared, cached context
 
+/** Tougher, not looser: harsher inputs find more real bugs, but the evidence rules above stay fixed. */
+const ADVERSARIAL = `Test adversarially, like a user trying to break the product: extreme and malformed inputs (very long text, emoji and RTL text, leading/trailing spaces, HTML/script-looking strings, negative and huge numbers), rapid repeated clicks and double submits, back/reload mid-flow, empty and error states, and mobile/keyboard paths where enabled. Report a failure only when a final assertion proves it; harsh inputs never lower the bar for evidence.`;
+
 const QA_PRINCIPLES = `You are a principal QA engineer. You design and run tests against a live website through a real Chromium browser.
 
 Test design rules:
@@ -261,6 +264,7 @@ export async function planTests({
         role: "user",
         content: [...planningContext(run, pages, strategy), { type: "text", text: `You are the ${agent.name} (${agent.env} environment). ${agent.focus}
 Plan depth: ${plan.focus}
+${ADVERSARIAL}
 Viewports allowed: ${plan.checks.mobile ? "desktop and mobile (use mobile for layout- or touch-sensitive journeys)" : "desktop only"}
 
 ${SCRIPT_RULES}

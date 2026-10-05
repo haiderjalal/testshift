@@ -152,6 +152,24 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
       </div>
 
       <div>
+        <label htmlFor="company" className="font-medium">
+          Company or product name <span className="font-normal text-graphite">(optional)</span>
+        </label>
+        <input
+          id="company"
+          name="company"
+          type="text"
+          maxLength={80}
+          autoComplete="organization"
+          placeholder="Acme Checkout"
+          aria-invalid={Boolean(errors.company)}
+          aria-describedby={errors.company ? "company-error" : undefined}
+          className={input}
+        />
+        <FieldError id="company-error" message={errors.company} />
+      </div>
+
+      <div>
         <label htmlFor="notes" className="font-medium">
           Anything to focus on? <span className="font-normal text-graphite">(optional)</span>
         </label>
@@ -169,6 +187,19 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
           Don&apos;t include passwords. Pages behind a login aren&apos;t supported yet.
         </p>
         <FieldError id="notes-error" message={errors.notes} />
+      </div>
+
+      <div>
+        <label className="flex gap-3">
+          <input type="checkbox" name="leaderboard" className="mt-1 size-4 accent-ink" />
+          <span className="text-graphite">
+            List my site on the public{" "}
+            <Link href="/leaderboard" className="text-ink underline underline-offset-4 hover:text-dev">
+              leaderboard
+            </Link>
+            . Only the name, address, score and bug count are shown, never bug details.
+          </span>
+        </label>
       </div>
 
       <div>

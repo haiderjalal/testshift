@@ -18,6 +18,9 @@ export function SiteHeader({ showNav = true }: { showNav?: boolean }) {
             <Link href="/#faq" className="hidden text-graphite transition hover:text-ink sm:inline">
               FAQ
             </Link>
+            <Link href="/leaderboard" className="px-3 text-graphite transition hover:text-ink sm:px-0">
+              Leaderboard
+            </Link>
             <Link href="/hire" className="btn-primary h-9 px-4 text-sm">
               Start free
             </Link>
