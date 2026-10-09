@@ -39,7 +39,8 @@ test("listOperations: read-only operations run, writes are skipped with a reason
     origin,
   );
   assert.equal(op(ops, "GET", "/products").blockedReason, null);
-  assert.match(op(ops, "POST", "/products").blockedReason ?? "", /Changes data/);
+  assert.equal(op(ops, "POST", "/products").isWrite, true);
+  assert.equal(op(ops, "POST", "/products").blockedReason, null, "writes are decided by the test environment, not blocked by the spec");
 });
 
 test("listOperations: path parameters use spec examples; missing required values block the operation", () => {
@@ -90,7 +91,7 @@ test("listOperations: resolves local $ref parameters and refuses specs that poin
 });
 
 test("evaluateResponse: 5xx is critical; 4xx explains that the spec example may be wrong", () => {
-  const getOp = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: null, blockedReason: null, missingPathParams: [] } satisfies ApiOperation;
+  const getOp = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: null, blockedReason: null, missingPathParams: [], isWrite: false, bodySchema: null } satisfies ApiOperation;
   const serverError = evaluateResponse(getOp, response({ status: 500 }));
   assert.equal(worstSeverity(serverError), "critical");
 
@@ -106,7 +107,7 @@ test("evaluateResponse: schema validation resolves $ref through components and r
     properties: { items: { type: "array", items: { $ref: "#/components/schemas/Item" } } },
     components: { schemas: { Item: { type: "object", required: ["price"], properties: { price: { type: "number" } } } } },
   };
-  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [] };
+  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [], isWrite: false, bodySchema: null };
 
   const valid = evaluateResponse(getOp, response({ body: JSON.stringify({ items: [{ price: 9.5 }] }) }));
   assert.equal(worstSeverity(valid), null);
@@ -119,7 +120,7 @@ test("evaluateResponse: schema validation resolves $ref through components and r
 
 test("evaluateResponse: wrong content type, invalid JSON, slow responses and truncated bodies are handled", () => {
   const schema = { type: "object" };
-  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [] };
+  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [], isWrite: false, bodySchema: null };
 
   assert.equal(worstSeverity(evaluateResponse(getOp, response({ contentType: "text/html", body: "<html>" }))), "major");
   assert.equal(worstSeverity(evaluateResponse(getOp, response({ body: "{not json" }))), "major");

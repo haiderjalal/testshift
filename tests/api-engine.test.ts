@@ -44,7 +44,7 @@ test("Swagger 2 is converted: host and basePath become the server, definitions b
   assert.equal(get.blockedReason, null);
   assert.deepEqual(get.successStatuses, ["200"]);
   assert.match(JSON.stringify(get.responseSchema), /#\/components\/schemas\/Product/, "refs are rewritten to the OpenAPI 3 location");
-  assert.match(ops.find((o) => o.method === "POST")?.blockedReason ?? "", /Changes data/);
+  assert.equal(ops.find((o) => o.method === "POST")?.isWrite, true);
 });
 
 test("Swagger 2 path parameters use their default when one is given", () => {
@@ -132,5 +132,5 @@ test("Postman: text that is not a collection is refused", () => {
 
 test("collection requests that change data are listed but blocked from being sent", () => {
   assert.equal(collectionOperation({ method: "GET", path: "/api/products" }).blockedReason, null);
-  assert.match(collectionOperation({ method: "DELETE", path: "/api/products/1" }).blockedReason ?? "", /Changes data/);
+  assert.equal(collectionOperation({ method: "DELETE", path: "/api/products/1" }).isWrite, true);
 });

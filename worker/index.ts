@@ -19,6 +19,8 @@ import { securityChecks } from "./security";
 import { runVisualChecks, type VisualCheck, type Viewport } from "./visual";
 import { exploreSite } from "./explore";
 import { processRequirementRequest } from "./requirements";
+import { runLoadCheck, type LoadCheck } from "./load";
+import { checkTestEnvironment } from "@/lib/test-environments";
 import { configuredImageStore } from "@/lib/image-store";
 import type { SecurityCheck } from "@/lib/security-checks";
 
@@ -268,6 +270,24 @@ async function runExploration(run: Run, browser: Browser, pages: SitePage[], str
   log("info", "Exploration finished", { runId: run.id, ...outcome.summary });
 }
 
+/** The load test's result as a performance test case. Blocked means it did not run, and says why. */
+function loadCheckCase(c: LoadCheck): Draft {
+  return {
+    feature: null,
+    script: [],
+    title: c.title,
+    category: "performance",
+    priority: "medium",
+    viewport: "desktop",
+    start_url: c.url,
+    steps: c.steps,
+    expected: c.expected,
+    status: c.passed === null ? "blocked" : c.passed ? "passed" : "failed",
+    actual: c.actual,
+    severity: c.severity,
+  };
+}
+
 /** Maps one visual comparison to a UI test case. Blocked means not compared yet, never passed. */
 function visualCheckCase(c: VisualCheck): Draft {
   return {
@@ -394,6 +414,19 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
       log("error", "Visual comparison failed", { runId: run.id, error: errorMessage(e) });
     }
   }
+  if (checks.performance) {
+    await setActivity(run.id, agent.id, `${agent.name} · Light load test`);
+    try {
+      const load = await runLoadCheck(run.url, until);
+      drafts.push(loadCheckCase(load));
+      await withRunLease(run.id, lease.token, async (sql) => {
+        await sql`update runs set load_summary = ${load.summary ? json(load.summary) : null} where id = ${run.id}`;
+      });
+    } catch (e) {
+      if (e instanceof LeaseLostError) throw e;
+      log("error", "Load test failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
   if (checks.securityHeaders && audits[0]) {
     drafts.push(securityCase(audits[0]));
     // Isolated: a failure in the extended checks must not cost the release checks above.
@@ -481,7 +514,9 @@ async function runApiPhase(run: Run, stopAt: number): Promise<void> {
   if (done) return;
   await setActivity(run.id, "staging", "Staging agent · API checks");
   const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
-  const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until, run.api_collection ?? []);
+  // Writes need an approved test environment and a verified domain. The gate is checked here, not assumed.
+  const writeGate = await checkTestEnvironment(run.url, "writes");
+  const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until, run.api_collection ?? [], { writesEnabled: writeGate.ok });
   await withRunLease(run.id, lease.token, async (sql) => {
     await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null} where id = ${run.id}`;
     for (const row of rows) {

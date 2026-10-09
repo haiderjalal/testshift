@@ -24,6 +24,10 @@ export interface ApiOperation {
   blockedReason: string | null;
   /** Path parameters still unfilled, so a read-only chain can supply them from an earlier list response. */
   missingPathParams: string[];
+  /** True for POST, PUT, PATCH and DELETE. Whether they run is decided by the test environment, not here. */
+  isWrite: boolean;
+  /** The request body schema for writes, with components for $ref resolution. Null when there is none. */
+  bodySchema: JsonObject | null;
 }
 
 export function isObject(value: unknown): value is JsonObject {
@@ -97,6 +101,14 @@ function successSchema(spec: JsonObject, responses: JsonObject, codes: string[])
   return isObject(schema) ? { ...schema, components: spec.components ?? {} } : null;
 }
 
+/** The JSON body schema of an operation, resolved against the spec's components. */
+function requestBodySchema(spec: JsonObject, requestBody: unknown): JsonObject | null {
+  const body = deref(spec, requestBody);
+  const media = isObject(body) && isObject(body.content) ? deref(spec, body.content["application/json"]) : undefined;
+  const schema = isObject(media) ? deref(spec, media.schema) : undefined;
+  return isObject(schema) ? { ...schema, components: spec.components ?? {} } : null;
+}
+
 export function describeOperation(
   spec: JsonObject,
   base: URL,
@@ -110,13 +122,9 @@ export function describeOperation(
   const successStatuses = Object.keys(responses).filter((code) => /^(2\d\d|2XX)$/i.test(code));
   const filled = fillParameters(spec, template, params);
   const requestPath = `${base.pathname.replace(/\/$/, "")}${filled.path}`;
-  const body = deref(spec, operation.requestBody);
-  const bodyRequired = isObject(body) && body.required === true;
 
   let blockedReason: string | null = filled.blockedReason;
   if (base.origin !== origin.origin) blockedReason = "The spec points to a different host, so it is not tested from this site";
-  else if (!SAFE_METHODS.has(method)) blockedReason = "Changes data. Write tests are not enabled yet.";
-  else if (bodyRequired) blockedReason = "Needs a request body";
 
   return {
     method,
@@ -125,6 +133,8 @@ export function describeOperation(
     successStatuses,
     responseSchema: successSchema(spec, responses, successStatuses),
     missingPathParams: [...filled.path.matchAll(/{([^{}]+)}/g)].map((match) => match[1]),
+    isWrite: !SAFE_METHODS.has(method),
+    bodySchema: requestBodySchema(spec, operation.requestBody),
     blockedReason,
   };
 }
@@ -142,7 +152,7 @@ export function listOperations(spec: JsonObject, origin: URL): ApiOperation[] {
       if (!isObject(operation)) continue;
       const upper = method.toUpperCase();
       if (!base) {
-        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid", missingPathParams: [] });
+        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid", missingPathParams: [], isWrite: false, bodySchema: null });
         continue;
       }
       operations.push(describeOperation(spec, base, origin, template, upper, operation, [...shared, ...asArray(operation.parameters)]));
