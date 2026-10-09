@@ -1,4 +1,5 @@
 import type { ApiCheck, CheckSeverity } from "@/lib/api/checks";
+import { latencySeverity, type LatencySummary } from "@/lib/performance";
 
 export interface ApiCheckRow {
   id: string;
@@ -6,6 +7,7 @@ export interface ApiCheckRow {
   path: string;
   status_code: number | null;
   latency_ms: number | null;
+  latency_p95_ms: number | null;
   skipped_reason: string | null;
   passed: boolean | null;
   severity: CheckSeverity | null;
@@ -21,7 +23,7 @@ const SEVERITY_COLOR: Record<CheckSeverity, string> = {
 const NOT_FOUND_NOTE =
   "No OpenAPI 3 document (JSON) was found at /openapi.json, /swagger.json, /v3/api-docs, /api-docs or /api/openapi.json, so no API endpoints were tested.";
 
-export function ApiChecks({ rows, specUrl }: { rows: ApiCheckRow[]; specUrl: string | null }) {
+export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; specUrl: string | null; latency: LatencySummary | null }) {
   const tested = rows.filter((r) => r.passed !== null);
   const passed = tested.filter((r) => r.passed).length;
   const skipped = rows.length - tested.length;
@@ -43,6 +45,7 @@ export function ApiChecks({ rows, specUrl }: { rows: ApiCheckRow[]; specUrl: str
         <p className="text-graphite">{NOT_FOUND_NOTE}</p>
       ) : (
         <>
+          {latency && <LatencyLine latency={latency} />}
           <p className="text-graphite">
             <span className="text-pass">{passed} passed</span> · <span className="text-fail">{tested.length - passed} failed</span> ·{" "}
             {skipped} skipped. Skipped operations were not sent: they change data, need an example value, or ran out of time. A skipped operation is not a pass.
@@ -79,11 +82,25 @@ export function ApiChecks({ rows, specUrl }: { rows: ApiCheckRow[]; specUrl: str
   );
 }
 
+function LatencyLine({ latency }: { latency: LatencySummary }) {
+  const severity = latencySeverity(latency.p95);
+  return (
+    <p className={`text-sm ${severity ? SEVERITY_COLOR[severity] : "text-graphite"}`}>
+      Latency across {latency.samples} requests: p50 {latency.p50} ms, p95 {latency.p95} ms, p99 {latency.p99} ms.
+      {severity ? ` p95 is above the ${severity === "major" ? "2" : "1"}-second budget.` : " Within the 1-second budget."}
+    </p>
+  );
+}
+
 function StatusBadge({ row }: { row: ApiCheckRow }) {
   if (row.passed === null) {
     return <span className="text-xs text-graphite">not run</span>;
   }
-  const detail = [row.status_code ? `HTTP ${row.status_code}` : null, row.latency_ms !== null ? `${row.latency_ms} ms` : null]
+  const detail = [
+    row.status_code ? `HTTP ${row.status_code}` : null,
+    row.latency_ms !== null ? `p50 ${row.latency_ms} ms` : null,
+    row.latency_p95_ms !== null ? `p95 ${row.latency_p95_ms} ms` : null,
+  ]
     .filter(Boolean)
     .join(" · ");
   return (

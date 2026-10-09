@@ -407,12 +407,12 @@ async function runApiPhase(run: Run, stopAt: number): Promise<void> {
   if (done) return;
   await setActivity(run.id, "staging", "Staging agent · API checks");
   const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
-  const { specUrl, rows } = await runApiChecks(new URL(run.url), until);
+  const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until);
   await withRunLease(run.id, lease.token, async (sql) => {
-    await sql`update runs set api_spec_url = ${specUrl} where id = ${run.id}`;
+    await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null} where id = ${run.id}`;
     for (const row of rows) {
-      await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, skipped_reason, passed, severity, checks)
-        values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)})`;
+      await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, latency_p95_ms, skipped_reason, passed, severity, checks)
+        values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.latencyP95Ms}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)})`;
     }
   });
   log("info", "API checks stored", { runId: run.id, operations: rows.length, spec: Boolean(specUrl) });

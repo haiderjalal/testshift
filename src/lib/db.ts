@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { databaseTls } from "./security";
 
 import type { AgentId } from "./agents";
+import type { LatencySummary } from "./performance";
 import type { PlanId } from "./plans";
 
 const cache = globalThis as typeof globalThis & { sql?: postgres.Sql };
@@ -84,6 +85,7 @@ export interface Run {
   payment_confirmed_at?: Date | null;
   start_authorized_at?: Date | null;
   api_spec_url?: string | null;
+  api_latency?: LatencySummary | null;
 }
 
 export const BROWSER_ACTIONS = [
