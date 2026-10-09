@@ -6,7 +6,9 @@ import { db, isUuid, type Run, type TestCase } from "@/lib/db";
 import { emailConfigured } from "@/lib/email";
 import { formatDuration, PLANS } from "@/lib/plans";
 
+import { isSiteVerified, getOrCreateVerification, dnsRecordName, dnsRecordValue, VERIFICATION_DAYS, VERIFICATION_FILE_PATH } from "@/lib/ownership";
 import { ApiChecks, type ApiCheckRow } from "./ApiChecks";
+import { OwnershipPanel } from "./OwnershipPanel";
 import { LiveShift } from "./LiveShift";
 import { Report } from "./Report";
 import { BetaOrderNotice } from "./BetaOrderNotice";
@@ -44,6 +46,10 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
     ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, skipped_reason, passed, severity, checks
         from api_checks where run_id = ${id} order by created_at, id`
     : [];
+  const ownershipHost = new URL(run.url).hostname;
+  const ownership = run.status === "completed"
+    ? { record: await getOrCreateVerification(ownershipHost), fresh: await isSiteVerified(ownershipHost) }
+    : null;
   const plan = PLANS[run.plan];
 
   return (
@@ -63,6 +69,17 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
           <div className="space-y-14">
             <Report run={run} cases={cases} />
             <ApiChecks rows={apiChecks} specUrl={run.api_spec_url ?? null} />
+            {ownership && <OwnershipPanel
+              runId={id}
+              host={ownershipHost}
+              verified={ownership.fresh}
+              verifiedMethod={ownership.record.verified_method}
+              verificationDays={VERIFICATION_DAYS}
+              token={ownership.record.token}
+              dnsName={dnsRecordName(ownershipHost)}
+              dnsValue={dnsRecordValue(ownership.record.token)}
+              fileUrl={`https://${ownershipHost}${VERIFICATION_FILE_PATH}`}
+            />}
           </div>
         ) : run.status === "failed" ? (
           <div role="alert" className="glass mt-10 rounded-2xl border-fail/40 p-6">

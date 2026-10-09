@@ -110,7 +110,7 @@ export function describeOperation(
 
   let blockedReason: string | null = filled.blockedReason;
   if (base.origin !== origin.origin) blockedReason = "The spec points to a different host, so it is not tested from this site";
-  else if (!SAFE_METHODS.has(method)) blockedReason = "Changes data. Runs only after domain ownership is verified.";
+  else if (!SAFE_METHODS.has(method)) blockedReason = "Changes data. Write tests are not enabled yet.";
   else if (bodyRequired) blockedReason = "Needs a request body";
 
   return {

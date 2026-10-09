@@ -1,22 +1,9 @@
-import { lookup } from "node:dns/promises";
 import { createServer, request as httpRequest, type OutgoingHttpHeaders } from "node:http";
-import { connect, isIP, type Socket } from "node:net";
+import { connect, type Socket } from "node:net";
 
-import { isPrivateIp } from "@/lib/net";
+import { resolvePublicAddress } from "@/lib/outbound";
 
-/** DNS validation and the connection use the SAME address, closing the check/resolve rebinding gap. */
-export async function resolvePublicAddress(hostname: string): Promise<string> {
-  const host = hostname.replace(/^\[|\]$/g, "");
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const addresses = isIP(host) ? [{ address: host }] : await Promise.race([
-      lookup(host, { all: true }),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("DNS timeout")), 5_000); }),
-    ]);
-    if (!addresses.length || addresses.some((a) => isPrivateIp(a.address))) throw new Error("Non-public destination refused");
-    return addresses[0].address;
-  } finally { clearTimeout(timer); }
-}
+export { resolvePublicAddress };
 
 /** Local forward proxy used ONLY by the test browser. Redirects establish fresh, checked connections. */
 export async function startEgressProxy(): Promise<{ server: string; close: () => Promise<void> }> {
