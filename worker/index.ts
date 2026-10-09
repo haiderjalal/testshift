@@ -22,7 +22,7 @@ import { processRequirementRequest } from "./requirements";
 import { runLoadCheck, type LoadCheck } from "./load";
 import { checkTestEnvironment } from "@/lib/test-environments";
 import { configuredImageStore } from "@/lib/image-store";
-import type { SecurityCheck } from "@/lib/security-checks";
+import { BLOCKED_NEEDS_OWNERSHIP, type SecurityCheck } from "@/lib/security-checks";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
 const MINUTES_PER_HOUR = process.env.NODE_ENV === "production" ? 60 : Number(process.env.SHIFT_MINUTES_PER_HOUR ?? 60);
@@ -408,7 +408,9 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
         store: configuredImageStore(),
         withLease: (write) => withRunLease(run.id, lease.token, write),
       });
-      drafts.push(...visual.map(visualCheckCase));
+      // Checks that do not apply (no approved screenshot yet, no storage) are not test cases: a blocked case would
+      // mark the shift Incomplete. The visual section of the report shows them, with the approve button.
+      drafts.push(...visual.filter((c) => c.passed !== null).map(visualCheckCase));
     } catch (e) {
       if (e instanceof LeaseLostError) throw e;
       log("error", "Visual comparison failed", { runId: run.id, error: errorMessage(e) });
@@ -418,7 +420,8 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
     await setActivity(run.id, agent.id, `${agent.name} · Light load test`);
     try {
       const load = await runLoadCheck(run.url, until);
-      drafts.push(loadCheckCase(load));
+      // Without an approved, verified environment the load test does not apply, so it is not a coverage gap.
+      if (load.passed !== null) drafts.push(loadCheckCase(load));
       await withRunLease(run.id, lease.token, async (sql) => {
         await sql`update runs set load_summary = ${load.summary ? json(load.summary) : null} where id = ${run.id}`;
       });
@@ -433,7 +436,8 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
     try {
       const verified = await isSiteVerified(new URL(run.url).hostname);
       const checked = await securityChecks({ siteUrl: run.url, pageHeaders: audits[0].headers, verified, until });
-      drafts.push(...checked.map((c) => securityCheckCase(c, run.url)));
+      // Active probes waiting on domain verification are shown on the report's ownership panel, not as gaps.
+      drafts.push(...checked.filter((c) => c.actual !== BLOCKED_NEEDS_OWNERSHIP).map((c) => securityCheckCase(c, run.url)));
     } catch (e) {
       log("error", "Security checks failed", { runId: run.id, error: errorMessage(e) });
     }
