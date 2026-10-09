@@ -7,9 +7,10 @@ import { normalizeText } from "@/lib/security";
 import postgres from "postgres";
 import { z } from "zod";
 
-import { db } from "@/lib/db";
+import { db, json } from "@/lib/db";
 import { appUrl, sendEmail } from "@/lib/email";
 import { cleanRequirements, MAX_REQUIREMENTS_CHARS } from "@/lib/requirements";
+import { importPostmanEndpoints } from "@/lib/api/postman";
 import { errorMessage, log } from "@/lib/log";
 import { emailKey, isPublicHost, siteKey } from "@/lib/net";
 import { createManualOrder, OrderError } from "@/lib/beta-orders";
@@ -24,7 +25,7 @@ const BUSY_MESSAGE = "Too many bookings from your network right now. Please try 
 
 export interface BookingState {
   message?: string;
-  errors?: Partial<Record<"url" | "email" | "company" | "plan" | "hours" | "notes" | "consent", string>>;
+  errors?: Partial<Record<"url" | "email" | "company" | "plan" | "hours" | "notes" | "consent" | "postman", string>>;
 }
 const bookingSchema = z.object({
   url: z
@@ -77,6 +78,17 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     return { errors: { url: "We can only test websites that are publicly reachable on the internet." } };
   }
 
+  // Only method and path survive the import; the collection's headers, auth and bodies are never stored.
+  const postman = String(formData.get("postman") ?? "").trim();
+  let apiCollection: { method: string; path: string }[] | null = null;
+  if (postman) {
+    try {
+      apiCollection = importPostmanEndpoints(postman, target).endpoints;
+    } catch {
+      return { errors: { postman: "We can't read this as a Postman collection. Export it as JSON (Collection v2.1)." } };
+    }
+  }
+
   let destination: string;
   try {
     const visitor = await clientKey();
@@ -89,7 +101,8 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
       : await createManualOrder({ ...booking, hours: Number(hours) }, expectedHourly);
     // The booking already exists; failing to save listing details must not make the customer book twice.
     await db()`update runs set company_name = ${company || null}, leaderboard_opt_in = ${leaderboard === "on"},
-      leaderboard_site = ${siteKey(target.hostname)}, requirements = ${requirements} where id = ${runId}`
+      leaderboard_site = ${siteKey(target.hostname)}, requirements = ${requirements},
+      api_collection = ${apiCollection ? json(apiCollection as unknown as object) : null} where id = ${runId}`
       .catch((e: unknown) => log("error", "Saving leaderboard details failed", { requestId, error: errorMessage(e) }));
     destination = `/runs/${runId}`;
   } catch (e) {

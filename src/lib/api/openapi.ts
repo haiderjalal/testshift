@@ -2,6 +2,9 @@
 
 export type JsonObject = Record<string, unknown>;
 
+/** The reason given when a path parameter has no example. Chaining may still supply it from earlier responses. */
+export const MISSING_EXAMPLE_REASON = "Needs an example value";
+
 const METHODS = ["get", "head", "post", "put", "patch", "delete"] as const;
 /** Only read-only methods run before the domain-ownership check exists. Everything else is reported as skipped. */
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -19,6 +22,8 @@ export interface ApiOperation {
   responseSchema: JsonObject | null;
   /** Why this operation must not be sent. Null when it is safe to run now. */
   blockedReason: string | null;
+  /** Path parameters still unfilled, so a read-only chain can supply them from an earlier list response. */
+  missingPathParams: string[];
 }
 
 export function isObject(value: unknown): value is JsonObject {
@@ -75,7 +80,7 @@ function fillParameters(spec: JsonObject, template: string, params: unknown[]): 
     const value = exampleOf(spec, param);
     const required = param.in === "path" || param.required === true;
     if (value === undefined) {
-      if (required) return { path, blockedReason: `Needs an example value for the ${String(param.in)} parameter "${param.name}"` };
+      if (required) return { path, blockedReason: `${MISSING_EXAMPLE_REASON} for the ${String(param.in)} parameter "${param.name}"` };
       continue;
     }
     if (param.in === "path") path = path.replace(`{${param.name}}`, encodeURIComponent(value));
@@ -119,6 +124,7 @@ export function describeOperation(
     requestPath,
     successStatuses,
     responseSchema: successSchema(spec, responses, successStatuses),
+    missingPathParams: [...filled.path.matchAll(/{([^{}]+)}/g)].map((match) => match[1]),
     blockedReason,
   };
 }
@@ -136,7 +142,7 @@ export function listOperations(spec: JsonObject, origin: URL): ApiOperation[] {
       if (!isObject(operation)) continue;
       const upper = method.toUpperCase();
       if (!base) {
-        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid" });
+        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid", missingPathParams: [] });
         continue;
       }
       operations.push(describeOperation(spec, base, origin, template, upper, operation, [...shared, ...asArray(operation.parameters)]));

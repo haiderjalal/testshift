@@ -8,6 +8,7 @@ export interface ApiCheckRow {
   status_code: number | null;
   latency_ms: number | null;
   latency_p95_ms: number | null;
+  chained_from: string | null;
   skipped_reason: string | null;
   passed: boolean | null;
   severity: CheckSeverity | null;
@@ -21,7 +22,7 @@ const SEVERITY_COLOR: Record<CheckSeverity, string> = {
 };
 
 const NOT_FOUND_NOTE =
-  "No OpenAPI 3 document (JSON) was found at /openapi.json, /swagger.json, /v3/api-docs, /api-docs or /api/openapi.json, so no API endpoints were tested.";
+  "No OpenAPI or Swagger description was found (JSON or YAML, at the usual paths), and no Postman requests were supplied, so no API endpoints were tested.";
 
 export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; specUrl: string | null; latency: LatencySummary | null }) {
   const tested = rows.filter((r) => r.passed !== null);
@@ -56,6 +57,7 @@ export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; spe
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="rounded-md border border-rule px-2 py-0.5 font-mono text-xs">{row.method}</span>
                   <span className="min-w-0 break-all font-mono text-sm">{row.path}</span>
+                  {row.chained_from && <span className="text-xs text-graphite">value taken from {row.chained_from}</span>}
                   <StatusBadge row={row} />
                 </div>
                 {row.skipped_reason && <p className="mt-2 text-sm text-graphite">Skipped: {row.skipped_reason}</p>}

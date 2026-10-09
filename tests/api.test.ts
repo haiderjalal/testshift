@@ -90,7 +90,7 @@ test("listOperations: resolves local $ref parameters and refuses specs that poin
 });
 
 test("evaluateResponse: 5xx is critical; 4xx explains that the spec example may be wrong", () => {
-  const getOp = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: null, blockedReason: null } satisfies ApiOperation;
+  const getOp = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: null, blockedReason: null, missingPathParams: [] } satisfies ApiOperation;
   const serverError = evaluateResponse(getOp, response({ status: 500 }));
   assert.equal(worstSeverity(serverError), "critical");
 
@@ -106,7 +106,7 @@ test("evaluateResponse: schema validation resolves $ref through components and r
     properties: { items: { type: "array", items: { $ref: "#/components/schemas/Item" } } },
     components: { schemas: { Item: { type: "object", required: ["price"], properties: { price: { type: "number" } } } } },
   };
-  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null };
+  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [] };
 
   const valid = evaluateResponse(getOp, response({ body: JSON.stringify({ items: [{ price: 9.5 }] }) }));
   assert.equal(worstSeverity(valid), null);
@@ -119,7 +119,7 @@ test("evaluateResponse: schema validation resolves $ref through components and r
 
 test("evaluateResponse: wrong content type, invalid JSON, slow responses and truncated bodies are handled", () => {
   const schema = { type: "object" };
-  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null };
+  const getOp: ApiOperation = { method: "GET", template: "/a", requestPath: "/a", successStatuses: ["200"], responseSchema: schema, blockedReason: null, missingPathParams: [] };
 
   assert.equal(worstSeverity(evaluateResponse(getOp, response({ contentType: "text/html", body: "<html>" }))), "major");
   assert.equal(worstSeverity(evaluateResponse(getOp, response({ body: "{not json" }))), "major");
