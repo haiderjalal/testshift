@@ -208,6 +208,26 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
       </div>
 
       <div>
+        <label htmlFor="postman" className="font-medium">
+          API collection <span className="font-normal text-graphite">(optional, Postman JSON)</span>
+        </label>
+        <textarea
+          id="postman"
+          name="postman"
+          rows={3}
+          maxLength={500000}
+          placeholder="Paste a Postman collection exported as JSON (v2.1)"
+          aria-invalid={Boolean(errors.postman)}
+          aria-describedby={errors.postman ? "postman-hint postman-error" : "postman-hint"}
+          className={input}
+        />
+        <p id="postman-hint" className="mt-2 text-sm text-graphite">
+          We keep only each request&apos;s method and path. Headers, auth, variables, bodies and query strings are dropped, so secrets are not stored. Write requests are listed but not sent yet.
+        </p>
+        <FieldError id="postman-error" message={errors.postman} />
+      </div>
+
+      <div>
         <label className="flex gap-3">
           <input type="checkbox" name="leaderboard" className="mt-1 size-4 accent-ink" />
           <span className="text-graphite">

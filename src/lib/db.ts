@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { databaseTls } from "./security";
 
 import type { AgentId } from "./agents";
+import type { PostmanEndpoint } from "./api/postman";
 import type { LatencySummary } from "./performance";
 import type { PlanId } from "./plans";
 
@@ -87,6 +88,8 @@ export interface Run {
   api_spec_url?: string | null;
   api_latency?: LatencySummary | null;
   requirements?: string | null;
+  /** Sanitised Postman endpoints (method and path only) the customer supplied. */
+  api_collection?: PostmanEndpoint[] | null;
 }
 
 export const BROWSER_ACTIONS = [

@@ -44,7 +44,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
       actions, screenshot is not null as has_screenshot, finished_at, requirement
     from test_cases where run_id = ${id} order by seq`;
   const apiChecks = run.status === "completed"
-    ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, latency_p95_ms, skipped_reason, passed, severity, checks
+    ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, latency_p95_ms, chained_from, skipped_reason, passed, severity, checks
         from api_checks where run_id = ${id} order by created_at, id`
     : [];
   const ownershipHost = new URL(run.url).hostname;

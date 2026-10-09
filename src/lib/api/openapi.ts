@@ -2,6 +2,9 @@
 
 export type JsonObject = Record<string, unknown>;
 
+/** The reason given when a path parameter has no example. Chaining may still supply it from earlier responses. */
+export const MISSING_EXAMPLE_REASON = "Needs an example value";
+
 const METHODS = ["get", "head", "post", "put", "patch", "delete"] as const;
 /** Only read-only methods run before the domain-ownership check exists. Everything else is reported as skipped. */
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -19,6 +22,12 @@ export interface ApiOperation {
   responseSchema: JsonObject | null;
   /** Why this operation must not be sent. Null when it is safe to run now. */
   blockedReason: string | null;
+  /** Path parameters still unfilled, so a read-only chain can supply them from an earlier list response. */
+  missingPathParams: string[];
+  /** True for POST, PUT, PATCH and DELETE. Whether they run is decided by the test environment, not here. */
+  isWrite: boolean;
+  /** The request body schema for writes, with components for $ref resolution. Null when there is none. */
+  bodySchema: JsonObject | null;
 }
 
 export function isObject(value: unknown): value is JsonObject {
@@ -75,7 +84,7 @@ function fillParameters(spec: JsonObject, template: string, params: unknown[]): 
     const value = exampleOf(spec, param);
     const required = param.in === "path" || param.required === true;
     if (value === undefined) {
-      if (required) return { path, blockedReason: `Needs an example value for the ${String(param.in)} parameter "${param.name}"` };
+      if (required) return { path, blockedReason: `${MISSING_EXAMPLE_REASON} for the ${String(param.in)} parameter "${param.name}"` };
       continue;
     }
     if (param.in === "path") path = path.replace(`{${param.name}}`, encodeURIComponent(value));
@@ -88,6 +97,14 @@ function successSchema(spec: JsonObject, responses: JsonObject, codes: string[])
   const response = deref(spec, code ? responses[code] : undefined);
   if (!isObject(response) || !isObject(response.content)) return null;
   const media = deref(spec, response.content["application/json"]);
+  const schema = isObject(media) ? deref(spec, media.schema) : undefined;
+  return isObject(schema) ? { ...schema, components: spec.components ?? {} } : null;
+}
+
+/** The JSON body schema of an operation, resolved against the spec's components. */
+function requestBodySchema(spec: JsonObject, requestBody: unknown): JsonObject | null {
+  const body = deref(spec, requestBody);
+  const media = isObject(body) && isObject(body.content) ? deref(spec, body.content["application/json"]) : undefined;
   const schema = isObject(media) ? deref(spec, media.schema) : undefined;
   return isObject(schema) ? { ...schema, components: spec.components ?? {} } : null;
 }
@@ -105,13 +122,9 @@ export function describeOperation(
   const successStatuses = Object.keys(responses).filter((code) => /^(2\d\d|2XX)$/i.test(code));
   const filled = fillParameters(spec, template, params);
   const requestPath = `${base.pathname.replace(/\/$/, "")}${filled.path}`;
-  const body = deref(spec, operation.requestBody);
-  const bodyRequired = isObject(body) && body.required === true;
 
   let blockedReason: string | null = filled.blockedReason;
   if (base.origin !== origin.origin) blockedReason = "The spec points to a different host, so it is not tested from this site";
-  else if (!SAFE_METHODS.has(method)) blockedReason = "Changes data. Write tests are not enabled yet.";
-  else if (bodyRequired) blockedReason = "Needs a request body";
 
   return {
     method,
@@ -119,6 +132,9 @@ export function describeOperation(
     requestPath,
     successStatuses,
     responseSchema: successSchema(spec, responses, successStatuses),
+    missingPathParams: [...filled.path.matchAll(/{([^{}]+)}/g)].map((match) => match[1]),
+    isWrite: !SAFE_METHODS.has(method),
+    bodySchema: requestBodySchema(spec, operation.requestBody),
     blockedReason,
   };
 }
@@ -136,7 +152,7 @@ export function listOperations(spec: JsonObject, origin: URL): ApiOperation[] {
       if (!isObject(operation)) continue;
       const upper = method.toUpperCase();
       if (!base) {
-        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid" });
+        operations.push({ method: upper, template, requestPath: template, successStatuses: [], responseSchema: null, blockedReason: "The spec's server URL is not valid", missingPathParams: [], isWrite: false, bodySchema: null });
         continue;
       }
       operations.push(describeOperation(spec, base, origin, template, upper, operation, [...shared, ...asArray(operation.parameters)]));

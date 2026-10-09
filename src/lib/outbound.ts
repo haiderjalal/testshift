@@ -44,11 +44,23 @@ export interface SendOptions {
   resolve?: (hostname: string) => Promise<string>;
 }
 
+export type RequestMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/** Largest JSON body we send. Example bodies from an API description are small by nature. */
+export const MAX_REQUEST_BODY_BYTES = 16_000;
+
+export interface RequestOptions extends SendOptions {
+  method?: RequestMethod;
+  /** A JSON document, already serialised. */
+  body?: string;
+}
+
 /**
- * One read-only HTTP GET. The DNS answer is checked for public addresses, and the connection is pinned to
- * that same address, so a second DNS lookup cannot send it somewhere else. Redirects are not followed.
+ * One HTTP request. The DNS answer is checked for public addresses, and the connection is pinned to that same
+ * address, so a second DNS lookup cannot send it somewhere else. Redirects are not followed.
  */
-export async function sendGet(url: URL, options: SendOptions): Promise<HttpResponse> {
+export async function sendRequest(url: URL, options: RequestOptions): Promise<HttpResponse> {
+  if (options.body !== undefined && Buffer.byteLength(options.body) > MAX_REQUEST_BODY_BYTES) throw new Error("Request body too large");
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Unsupported protocol");
   if (url.username || url.password) throw new Error("Credentials in URL are refused");
   const address = await (options.resolve ?? resolvePublicAddress)(url.hostname);
@@ -60,8 +72,13 @@ export async function sendGet(url: URL, options: SendOptions): Promise<HttpRespo
     const req = send(
       url,
       {
-        method: "GET",
-        headers: { accept: "application/json, */*;q=0.5", "user-agent": USER_AGENT, ...options.headers },
+        method: options.method ?? "GET",
+        headers: {
+          accept: "application/json, */*;q=0.5",
+          "user-agent": USER_AGENT,
+          ...(options.body !== undefined ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(options.body)) } : {}),
+          ...options.headers,
+        },
         timeout: options.timeoutMs,
         // Node asks for every address when connecting with happy-eyeballs; the pinned answer satisfies both forms.
         lookup: (_hostname, lookupOptions, callback) =>
@@ -71,8 +88,14 @@ export async function sendGet(url: URL, options: SendOptions): Promise<HttpRespo
     );
     req.on("timeout", () => req.destroy(new Error("Request timed out")));
     req.on("error", reject);
+    if (options.body !== undefined) req.write(options.body);
     req.end();
   });
+}
+
+/** A read-only GET, sent with the same checks as every request. */
+export function sendGet(url: URL, options: SendOptions): Promise<HttpResponse> {
+  return sendRequest(url, { ...options, method: "GET" });
 }
 
 function flattenHeaders(raw: IncomingMessage["headers"]): Record<string, string> {
