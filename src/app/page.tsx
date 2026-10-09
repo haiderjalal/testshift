@@ -4,7 +4,7 @@ import { Logo } from "@/components/Logo";
 import { SiteHeader } from "@/components/SiteHeader";
 import { UrlForm } from "@/components/UrlForm";
 import { SITE, TRIAL_MINUTES } from "@/lib/plans";
-import { loadBetaPrices } from "@/lib/beta-orders";
+import { loadLandingPrices } from "@/lib/beta-orders";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +54,7 @@ const FAQS = [
 ];
 
 export default async function Home() {
-  const prices = await loadBetaPrices();
+  const { prices, unavailable } = await loadLandingPrices();
   return (
     <>
       <SiteHeader />
@@ -108,7 +108,7 @@ export default async function Home() {
           <ReportStack />
         </section>
 
-        <Pricing prices={prices} />
+        <Pricing prices={prices} unavailable={unavailable} />
 
         <section id="faq" data-stage="overview" aria-labelledby="faq-heading" className="mx-auto max-w-4xl scroll-mt-20 px-5 py-24 sm:px-8">
           <h2 id="faq-heading" className="reveal font-display text-4xl font-semibold tracking-[-0.03em]">

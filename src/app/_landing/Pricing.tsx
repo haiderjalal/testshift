@@ -5,7 +5,7 @@ import { money, type BetaPrices } from "@/lib/beta-pricing";
 
 const TIER_COLOR = ["var(--color-dev)", "var(--color-staging)", "var(--color-uat)", "var(--color-prod)"];
 
-export function Pricing({ prices }: { prices: BetaPrices }) {
+export function Pricing({ prices, unavailable = false }: { prices: BetaPrices; unavailable?: boolean }) {
   return (
     <section id="pricing" data-stage="overview" aria-labelledby="pricing-heading" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-28 sm:px-8">
       <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">Pricing</p>
@@ -17,6 +17,8 @@ export function Pricing({ prices }: { prices: BetaPrices }) {
         <span className="text-pass">Your first {TRIAL_MINUTES} minutes are free on any plan.</span>
         {" "}Prepay a fixed quote by Wise after email onboarding; no subscription.
       </p>
+
+      {unavailable && <p role="status" className="mt-6 text-graphite">Live pricing is temporarily unavailable. Please try again shortly or contact us for a quote.</p>}
 
       <div className="mt-14 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {PLAN_IDS.map((id, i) => {
