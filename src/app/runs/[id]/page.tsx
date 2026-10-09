@@ -41,7 +41,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
 
   const cases = await db()<TestCase[]>`
     select id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
-      actions, screenshot is not null as has_screenshot, finished_at
+      actions, screenshot is not null as has_screenshot, finished_at, requirement
     from test_cases where run_id = ${id} order by seq`;
   const apiChecks = run.status === "completed"
     ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, latency_p95_ms, skipped_reason, passed, severity, checks

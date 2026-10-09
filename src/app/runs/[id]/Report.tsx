@@ -21,6 +21,11 @@ const STATUS_MARK: Record<TestCase["status"], { glyph: string; label: string; cl
 function CaseDetails({ c, runId }: { c: TestCase; runId: string }) {
   return (
     <div className="mt-3 space-y-3 text-[15px] leading-relaxed">
+      {c.requirement && (
+        <p>
+          <span className="font-medium">Requirement:</span> <span className="text-graphite">{c.requirement}</span>
+        </p>
+      )}
       <ol className="list-decimal space-y-1 pl-5 text-graphite">
         {c.steps.map((s, i) => (
           <li key={i}>{s}</li>

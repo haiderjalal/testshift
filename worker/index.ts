@@ -18,6 +18,7 @@ import { LeaseLostError, withRunLease } from "./lease";
 import { securityChecks } from "./security";
 import { runVisualChecks, type VisualCheck, type Viewport } from "./visual";
 import { exploreSite } from "./explore";
+import { processRequirementRequest } from "./requirements";
 import { configuredImageStore } from "@/lib/image-store";
 import type { SecurityCheck } from "@/lib/security-checks";
 
@@ -632,8 +633,16 @@ async function main(): Promise<void> {
       return null;
     });
     // processRun handles its own errors; this catch only guards the loop against the unexpected.
-    if (run) await processRun(run).catch((e) => log("error", "Unexpected worker error", { runId: run.id, error: errorMessage(e) }));
-    else await new Promise((resolve) => setTimeout(resolve, IDLE_POLL_MS));
+    if (run) {
+      await processRun(run).catch((e) => log("error", "Unexpected worker error", { runId: run.id, error: errorMessage(e) }));
+      continue;
+    }
+    // Idle: generate requirement tests for operators to review, then wait for the next shift.
+    const handled = await processRequirementRequest().catch((e) => {
+      log("error", "Requirement request failed", { error: errorMessage(e) });
+      return false;
+    });
+    if (!handled) await new Promise((resolve) => setTimeout(resolve, IDLE_POLL_MS));
   }
 }
 

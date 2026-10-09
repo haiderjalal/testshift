@@ -11,6 +11,7 @@ import { logOut } from "./actions";
 import { loadDashboard, PERIODS, type Period, type UsageRow } from "./data";
 import { TokenCalculator } from "./TokenCalculator";
 import { BetaOrders } from "./BetaOrders";
+import { RequirementReview } from "./RequirementReview";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
@@ -112,6 +113,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       </dl>
 
       <BetaOrders orders={data.betaOrders} prices={data.betaPrices} averages={data.planAverages} />
+      <RequirementReview />
 
       <div className="mt-6">
         <TokenCalculator averages={data.planAverages} prices={data.betaPrices} />
