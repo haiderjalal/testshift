@@ -2,12 +2,23 @@
 import { db, isUuid } from "./db";
 import { type BetaPrices, quoteFromCost } from "./beta-pricing";
 import { PLANS, type PlanId } from "./plans";
+import { errorMessage, log } from "./log";
 
 export class OrderError extends Error {}
 
 export async function loadBetaPrices(): Promise<BetaPrices> {
   const rows = await db()<{ plan: PlanId; estimated_token_hour_cents: number }[]>`select plan, estimated_token_hour_cents from beta_plan_prices`;
   return Object.fromEntries(rows.map((r) => [r.plan, quoteFromCost(r.estimated_token_hour_cents, 60).hourlyCents]));
+}
+
+/** Optional landing-page prices must not take down the public website. Orders
+ * continue to use the strict loader and database snapshot before accepting a quote. */
+export async function loadLandingPrices(): Promise<{ prices: BetaPrices; unavailable: boolean }> {
+  try { return { prices: await loadBetaPrices(), unavailable: false }; }
+  catch (error) {
+    log("warn", "Landing pricing unavailable", { operation: "loadLandingPrices", error: errorMessage(error) });
+    return { prices: {}, unavailable: true };
+  }
 }
 
 export async function saveBetaPrice(plan: string, costCents: number): Promise<void> {

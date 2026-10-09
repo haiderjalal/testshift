@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { X509Certificate } from "node:crypto";
+import { SUPABASE_CA } from "../src/lib/certificates/supabase-ca";
 import { contentSecurityPolicy, databaseTls, normalizeText, readBoundedBody, RequestError, sameOrigin, validForm } from "../src/lib/security";
 import { errorMessage, log } from "../src/lib/log";
 
@@ -10,6 +12,18 @@ test("origin checks require the exact scheme, host and port", () => {
 test("remote production DB uses certificate verification even with an insecure URL option", () => {
   assert.deepEqual(databaseTls("postgres://db.example/test?sslmode=disable", true), { rejectUnauthorized: true });
   assert.equal(databaseTls("postgres://127.0.0.1/test", true), false);
+});
+test("Supabase TLS uses the official CA only for Supabase endpoints and keeps verification enabled", () => {
+  const certificate = new X509Certificate(SUPABASE_CA);
+  assert.equal(certificate.ca, true);
+  assert.equal(certificate.fingerprint256.replaceAll(":", ""), "807025AD50D4ED219D2C9C7D299C004F824EB00CF7F65AFEF607D07B72E6CAFA");
+  assert.ok(Date.parse(certificate.validTo) > Date.now());
+  for (const host of ["aws-0-us-east-1.pooler.supabase.com", "db.project123.supabase.co"]) {
+    for (const production of [true, false]) assert.deepEqual(databaseTls(`postgres://${host}/test?sslmode=disable`, production), { rejectUnauthorized: true, ca: SUPABASE_CA });
+  }
+  for (const host of ["evil.invalid", "pooler.supabase.com.evil.invalid", "evilpooler.supabase.com", "db.example.supabase.co.evil.invalid"]) {
+    assert.deepEqual(databaseTls(`postgres://${host}/test`, true), { rejectUnauthorized: true });
+  }
 });
 test("forms reject files, duplicate fields and oversized data", () => {
   const form = new FormData(); form.set("name", "safe"); assert.equal(validForm(form), true);

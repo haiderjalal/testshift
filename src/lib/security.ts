@@ -1,3 +1,5 @@
+import { SUPABASE_CA } from "./certificates/supabase-ca";
+
 /** Shared request controls; no credentials or customer data in errors. */
 export const FORM_BODY_LIMIT = 32 * 1024;
 export const WEBHOOK_BODY_LIMIT = 256 * 1024;
@@ -16,9 +18,14 @@ export function normalizeText(value: string): string {
 }
 
 /** Local disposable databases use loopback; remote production databases must verify TLS certificates. */
-export function databaseTls(url: string, production: boolean): false | { rejectUnauthorized: true } | undefined {
-  const host = new URL(url).hostname;
+export function databaseTls(url: string, production: boolean): false | { rejectUnauthorized: true; ca?: string } | undefined {
+  const host = new URL(url).hostname.toLowerCase();
   if (["localhost", "127.0.0.1", "[::1]"].includes(host)) return false;
+  // Supabase's private root is absent from Node's public CA store. Scope this
+  // trust anchor to Supabase endpoints; Node still checks the certificate host.
+  if (host.endsWith(".pooler.supabase.com") || /^db\.[a-z0-9]+\.supabase\.co$/.test(host)) {
+    return { rejectUnauthorized: true, ca: SUPABASE_CA };
+  }
   return production ? { rejectUnauthorized: true } : undefined;
 }
 
