@@ -1,17 +1,26 @@
-import { chromium, type Browser } from "playwright";
+import type { Browser } from "playwright";
 
 import { agentWindows, type Agent, type AgentId } from "@/lib/agents";
+import { judgeCompatibility, type CompatibilityResult, type EngineId } from "@/lib/compat";
+import { isSiteVerified } from "@/lib/ownership";
 import { db, json, type Run, type Severity, type SitePage, type Strategy, type TestCase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { PLANS } from "@/lib/plans";
 
 import { executeCase, planTests, writeReport, writeStrategy, type CaseDraft } from "./ai";
-import { accessibilityAudit, auditPages, crawlSite, registerEgressBrowser, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
+import { accessibilityAudit, auditPages, compatibilityAudit, crawlSite, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
 import { AiBudget, BudgetExceededError, DeadlineError, budgetLimit, endBudget, startBudget } from "./budget";
 import { runApiChecks } from "./api";
 import { startEgressProxy } from "./egress";
+import { launchEngine, launchExtraEngines } from "./engines";
 import { LeaseLostError, withRunLease } from "./lease";
+import { securityChecks } from "./security";
+import { runVisualChecks, type VisualCheck, type Viewport } from "./visual";
+import { exploreSite } from "./explore";
+import { processRequirementRequest } from "./requirements";
+import { configuredImageStore } from "@/lib/image-store";
+import type { SecurityCheck } from "@/lib/security-checks";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
 const MINUTES_PER_HOUR = process.env.NODE_ENV === "production" ? 60 : Number(process.env.SHIFT_MINUTES_PER_HOUR ?? 60);
@@ -31,6 +40,10 @@ const MIN_BATCH = 5;
 const MAX_BATCH = 12;
 // Share of the time left after mapping that API checks may use. Agents get the rest.
 const API_SHARE = 0.1;
+// Pages each browser loads for the cross-browser comparison. Every extra page costs one load per engine.
+const MAX_COMPAT_PAGES = 5;
+// Share of the UAT window that exploratory testing may use. The planned UAT tests get the rest.
+const EXPLORE_SHARE = 0.4;
 
 type Draft = CaseDraft & Partial<Pick<TestCase, "status" | "actual" | "severity">>;
 
@@ -233,6 +246,64 @@ function securityCase(a: PageAudit): Draft {
   };
 }
 
+/** Explores the site once per shift. Proposed scenarios become pending exploratory tests, run by the normal executor. */
+async function runExploration(run: Run, browser: Browser, pages: SitePage[], strategy: Strategy | null, until: number): Promise<void> {
+  const [{ done }] = await db()<{ done: boolean }[]>`select exists (select 1 from runs where id = ${run.id} and exploration is not null) as done`;
+  if (done) return;
+  await setActivity(run.id, "uat", "UAT agent · Exploring the site");
+  const explorationUntil = Date.now() + Math.max(0, until - Date.now()) * EXPLORE_SHARE;
+  const outcome = await exploreSite({
+    run,
+    browser,
+    pages,
+    strategy,
+    existing: await listCases(run.id),
+    until: explorationUntil,
+    stopAt: until,
+  });
+  await insertCases(run.id, "uat", outcome.drafts);
+  await withRunLease(run.id, lease.token, async (sql) => {
+    await sql`update runs set exploration = ${json(outcome.summary)} where id = ${run.id}`;
+  });
+  log("info", "Exploration finished", { runId: run.id, ...outcome.summary });
+}
+
+/** Maps one visual comparison to a UI test case. Blocked means not compared yet, never passed. */
+function visualCheckCase(c: VisualCheck): Draft {
+  return {
+    feature: null,
+    script: [],
+    title: c.title,
+    category: "ui",
+    priority: "medium",
+    viewport: c.viewport,
+    start_url: c.url,
+    steps: c.steps,
+    expected: c.expected,
+    status: c.passed === null ? "blocked" : c.passed ? "passed" : "failed",
+    actual: c.actual,
+    severity: c.severity,
+  };
+}
+
+/** Maps one passive or active security check to a test case. A null result is blocked, not passed. */
+function securityCheckCase(c: SecurityCheck, url: string): Draft {
+  return {
+    feature: null,
+    script: [],
+    title: c.title,
+    category: "security",
+    priority: "medium",
+    viewport: "desktop",
+    start_url: url,
+    steps: c.steps,
+    expected: c.expected,
+    status: c.passed === null ? "blocked" : c.passed ? "passed" : "failed",
+    actual: c.actual,
+    severity: c.severity,
+  };
+}
+
 /** UAT accessibility check per page from axe-core's WCAG 2 A/AA rules (Lead and Principal plans). */
 function accessibilityCase(r: AccessibilityResult): Draft {
   const serious = r.violations.some((v) => v.impact === "critical" || v.impact === "serious");
@@ -244,8 +315,13 @@ function accessibilityCase(r: AccessibilityResult): Draft {
     priority: "medium",
     viewport: "desktop",
     start_url: r.url,
-    steps: [`Open ${r.url}`, "Run the WCAG 2 A and AA automated rules"],
-    expected: "No WCAG 2 A/AA violations.",
+    steps: [
+      `Open ${r.url}`,
+      "Run the WCAG 2.2 A and AA automated rules",
+      "Tab through the first keyboard stops and check focus is visible",
+      "Automated checks cover only part of WCAG; alt-text meaning, reading order and captions still need manual review",
+    ],
+    expected: "No WCAG 2.2 A/AA violations and visible keyboard focus.",
     status: r.blocked ? "blocked" : r.violations.length ? "failed" : "passed",
     actual: r.blocked ?? (r.violations.length
       ? r.violations
@@ -257,11 +333,31 @@ function accessibilityCase(r: AccessibilityResult): Draft {
   };
 }
 
+/** One cross-browser case per page. Pages that no browser loads, or that every browser fails the same way, are not browser differences. */
+function compatibilityCase(r: CompatibilityResult): Draft | null {
+  const judged = judgeCompatibility(r);
+  if (judged.outcome === "not-comparable") return null;
+  return {
+    feature: null,
+    script: [],
+    title: `${pathOf(r.url)} works the same in every browser`,
+    category: "compatibility",
+    priority: "medium",
+    viewport: "desktop",
+    start_url: r.url,
+    steps: [`Open ${r.url} in each browser`, "Compare the HTTP status and the browser errors"],
+    expected: "Every browser loads the page and reports the same errors.",
+    status: judged.outcome,
+    actual: judged.detail,
+    severity: judged.severity,
+  };
+}
+
 /** Automated checks an agent runs before its AI-planned tests. Runs once per shift, even after a worker restart. */
-async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pages: SitePage[], until: number) {
+async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pages: SitePage[], until: number, engines: Map<EngineId, Browser>) {
   const checks = PLANS[run.plan].checks;
   const urls = pages.map((p) => p.url);
-  const categories = agent.id === "prod" ? ["smoke", "performance", "security"] : ["accessibility"];
+  const categories = agent.id === "prod" ? ["smoke", "performance", "security", "compatibility"] : ["accessibility"];
   if (agent.id !== "prod" && !(agent.id === "uat" && checks.accessibility)) return;
   const [{ done }] = await db()<{ done: boolean }[]>`
     select exists (select 1 from test_cases where run_id = ${run.id} and agent = ${agent.id}
@@ -278,7 +374,42 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
   const audits = await auditPages(browser, run.url, urls, { vitals: checks.performance, until });
   const drafts: Draft[] = audits.map(smokeCase);
   if (checks.performance) drafts.push(...audits.map(performanceCase).filter((d): d is Draft => d !== null));
-  if (checks.securityHeaders && audits[0]) drafts.push(securityCase(audits[0]));
+  if (checks.visual) {
+    await setActivity(run.id, agent.id, `${agent.name} · Visual comparison`);
+    try {
+      const viewports: Viewport[] = checks.mobile ? ["desktop", "mobile"] : ["desktop"];
+      const visual = await runVisualChecks({
+        runId: run.id,
+        browser,
+        siteUrl: run.url,
+        urls,
+        viewports,
+        until,
+        store: configuredImageStore(),
+        withLease: (write) => withRunLease(run.id, lease.token, write),
+      });
+      drafts.push(...visual.map(visualCheckCase));
+    } catch (e) {
+      if (e instanceof LeaseLostError) throw e;
+      log("error", "Visual comparison failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
+  if (checks.securityHeaders && audits[0]) {
+    drafts.push(securityCase(audits[0]));
+    // Isolated: a failure in the extended checks must not cost the release checks above.
+    try {
+      const verified = await isSiteVerified(new URL(run.url).hostname);
+      const checked = await securityChecks({ siteUrl: run.url, pageHeaders: audits[0].headers, verified, until });
+      drafts.push(...checked.map((c) => securityCheckCase(c, run.url)));
+    } catch (e) {
+      log("error", "Security checks failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
+  if (engines.size > 1) {
+    await setActivity(run.id, agent.id, `${agent.name} · Comparing browsers`);
+    const compared = await compatibilityAudit(engines, run.url, urls.slice(0, MAX_COMPAT_PAGES), until);
+    drafts.push(...compared.map(compatibilityCase).filter((d): d is Draft => d !== null));
+  }
   await insertCases(run.id, agent.id, drafts);
 }
 
@@ -290,9 +421,18 @@ async function runPhase(
   strategy: Strategy | null,
   window: { agent: Agent; to: number },
   stopAt: number,
+  engines: Map<EngineId, Browser>,
 ) {
   const { agent } = window;
-  await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt));
+  await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt), engines);
+  if (agent.id === "uat" && PLANS[run.plan].checks.exploratory) {
+    try {
+      await runExploration(run, browser, pages, strategy, Math.min(window.to, stopAt));
+    } catch (e) {
+      if (e instanceof LeaseLostError) throw e;
+      log("error", "Exploratory testing failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
 
   while (Date.now() < Math.min(window.to, stopAt) && !lease.lost) {
     const [next] = await db()<TestCase[]>`
@@ -341,18 +481,18 @@ async function runApiPhase(run: Run, stopAt: number): Promise<void> {
   if (done) return;
   await setActivity(run.id, "staging", "Staging agent · API checks");
   const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
-  const { specUrl, rows } = await runApiChecks(new URL(run.url), until);
+  const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until);
   await withRunLease(run.id, lease.token, async (sql) => {
-    await sql`update runs set api_spec_url = ${specUrl} where id = ${run.id}`;
+    await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null} where id = ${run.id}`;
     for (const row of rows) {
-      await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, skipped_reason, passed, severity, checks)
-        values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)})`;
+      await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, latency_p95_ms, skipped_reason, passed, severity, checks)
+        values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.latencyP95Ms}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)})`;
     }
   });
   log("info", "API checks stored", { runId: run.id, operations: rows.length, spec: Boolean(specUrl) });
 }
 
-async function runShift(run: Run, browser: Browser, stopAt: number): Promise<void> {
+async function runShift(run: Run, browser: Browser, stopAt: number, engines: Map<EngineId, Browser>): Promise<void> {
   const start = run.started_at?.getTime() ?? Date.now();
 
   let pages = run.site_map;
@@ -395,7 +535,7 @@ async function runShift(run: Run, browser: Browser, stopAt: number): Promise<voi
   for (const window of windows) {
     if (Date.now() >= window.to) continue; // phase already over (resumed run); Prod's window ends at stopAt
     try {
-      await runPhase(run, browser, pages, strategy, window, stopAt);
+      await runPhase(run, browser, pages, strategy, window, stopAt, engines);
     } catch (e) {
       if (e instanceof LeaseLostError) throw e;
       // One agent failing (an API outage, a browser crash) must not cost the customer the other agents.
@@ -419,6 +559,7 @@ async function processRun(run: Run): Promise<void> {
       .catch((e) => log("warn", "Heartbeat failed", { runId: run.id, error: errorMessage(e) }));
   }, HEARTBEAT_MS);
   let browser: Browser | null = null;
+  let engines = new Map<EngineId, Browser>();
   let proxy: Awaited<ReturnType<typeof startEgressProxy>> | null = null;
   log("info", "Shift started", { runId: run.id, plan: run.plan, minutes: run.minutes, trial: run.is_trial });
 
@@ -426,10 +567,10 @@ async function processRun(run: Run): Promise<void> {
     const [{ spent }] = await db()<{ spent: number }[]>`select coalesce(sum(cost_usd), 0)::float8 as spent from ai_usage where run_id = ${run.id}`;
     startBudget(run.id, new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial, run.quoted_total_cents), spent));
     proxy = await startEgressProxy();
-    browser = await chromium.launch({ proxy: { server: proxy.server }, args: ["--proxy-bypass-list=<-loopback>", "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
-    registerEgressBrowser(browser, proxy.server);
+    browser = await launchEngine("chromium", proxy.server);
+    engines = new Map<EngineId, Browser>([["chromium", browser], ...(await launchExtraEngines(proxy.server))]);
     try {
-      await runShift(run, browser, stopAt);
+      await runShift(run, browser, stopAt, engines);
     } catch (e) {
       if (e instanceof LeaseLostError) throw e;
       // Keep what was tested so far and still deliver a report.
@@ -461,6 +602,7 @@ async function processRun(run: Run): Promise<void> {
   } finally {
     clearInterval(heartbeat);
     await browser?.close().catch(() => undefined);
+    for (const extra of engines.values()) await extra.close().catch(() => undefined);
     await proxy?.close().catch(() => undefined);
     endBudget(run.id);
   }
@@ -491,8 +633,16 @@ async function main(): Promise<void> {
       return null;
     });
     // processRun handles its own errors; this catch only guards the loop against the unexpected.
-    if (run) await processRun(run).catch((e) => log("error", "Unexpected worker error", { runId: run.id, error: errorMessage(e) }));
-    else await new Promise((resolve) => setTimeout(resolve, IDLE_POLL_MS));
+    if (run) {
+      await processRun(run).catch((e) => log("error", "Unexpected worker error", { runId: run.id, error: errorMessage(e) }));
+      continue;
+    }
+    // Idle: generate requirement tests for operators to review, then wait for the next shift.
+    const handled = await processRequirementRequest().catch((e) => {
+      log("error", "Requirement request failed", { error: errorMessage(e) });
+      return false;
+    });
+    if (!handled) await new Promise((resolve) => setTimeout(resolve, IDLE_POLL_MS));
   }
 }
 

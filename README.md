@@ -58,6 +58,8 @@ npm run test:e2e
 
 `npm run check` asserts the SSRF guard and the Playwright export.
 
+Extra browsers: Chromium runs every shift. Firefox and WebKit run the cross-browser check only when listed in `QA_ENGINES`. Before enabling one on the worker machine, run `npm run check:engines` there: it must report no loopback leak for that engine. `npm run check:keyboard` checks the keyboard focus rule against fixtures. Firefox does not start through Playwright on Windows dev machines; test it on the Linux worker image.
+
 `npm test` runs adversarial worker, database, assertion and budget regressions. Browser traffic in agent tests is locally fulfilled; model calls are mocked. `test:e2e` starts the production build with an in-memory PGlite database and disabled payment/email/model credentials. It never runs the customer worker. Do not set `QA_REUSE_SERVER=1` unless intentionally reusing that disposable test server. Chromium must be installed.
 
 Optional paid synthetic-agent evaluation: `node --env-file-if-exists=.env.local --import tsx scripts/evaluate-agent.ts`. It uses the configured model credential, an estimated $0.30 ceiling, locally fulfilled browser fixtures, and no customer database. Results are saved under ignored `artifacts/qa/`. This is a small development evaluation, not a recall benchmark.

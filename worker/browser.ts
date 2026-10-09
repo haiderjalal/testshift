@@ -1,7 +1,9 @@
 import axe from "axe-core";
 import { devices, type Browser, type BrowserContext, type Page } from "playwright";
 
+import type { CompatibilityResult, EngineId, EngineOutcome } from "@/lib/compat";
 import type { BrowserAction, SitePage } from "@/lib/db";
+import { MAX_PAGE_HEIGHT } from "@/lib/visual";
 import { isPrivateIp, isPublicHost, siteKey } from "@/lib/net";
 import { exactTextPattern, scopedUrl, urlMatches, validateAction } from "@/lib/qa";
 
@@ -486,7 +488,148 @@ export interface AccessibilityResult {
   violations: { id: string; impact: string | null; help: string; count: number }[];
 }
 
-/** Runs axe-core's WCAG 2 A/AA rules on each page for the UAT agent. A page that can't be audited is skipped. */
+/** WCAG 2.2 AA is the current standard; the 2.1 and 2.0 criteria it builds on are included. */
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+const TAB_STOPS = 25;
+const FOCUS_EXAMPLES = 3;
+
+/**
+ * Keyboard users need to see where focus is. Tabs through the first stops and flags controls with no focus
+ * outline or shadow. This is a heuristic: a focus style that only changes colour is not caught.
+ */
+export async function keyboardFocusProblems(page: Page): Promise<AccessibilityResult["violations"]> {
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.scrollTo(0, 0);
+  });
+  const examples: string[] = [];
+  let unseen = 0;
+  for (let stop = 0; stop < TAB_STOPS; stop++) {
+    await page.keyboard.press("Tab");
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement) || el === document.body || el === document.documentElement) return null;
+      const style = getComputedStyle(el);
+      const outlined = style.outlineStyle !== "none" && style.outlineWidth !== "0px";
+      const text = (el.getAttribute("aria-label") ?? el.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 50);
+      return { visible: outlined || style.boxShadow !== "none", label: `<${el.tagName.toLowerCase()}>${text ? ` "${text}"` : ""}` };
+    });
+    if (!focus) break; // focus left the page: the end of the tab order
+    if (!focus.visible) {
+      unseen++;
+      if (examples.length < FOCUS_EXAMPLES) examples.push(focus.label);
+    }
+  }
+  if (unseen === 0) return [];
+  return [
+    {
+      id: "keyboard-focus-visible",
+      impact: "serious",
+      help: `Focus is not visible on ${unseen} of the first ${TAB_STOPS} keyboard stops (for example ${examples.join(", ")})`,
+      count: unseen,
+    },
+  ];
+}
+
+/**
+ * Loads the same pages in every engine and records what each one saw, so the verdicts compare like with like.
+ * Each engine gets its own guarded context, so the network policy is identical across engines.
+ */
+export async function compatibilityAudit(
+  engines: Map<EngineId, Browser>,
+  siteUrl: string,
+  urls: string[],
+  until: number,
+): Promise<CompatibilityResult[]> {
+  const byUrl = new Map<string, EngineOutcome[]>(urls.map((url) => [url, []]));
+  for (const [engine, browser] of engines) {
+    if (Date.now() > until) break;
+    const context = await openContext(browser, "desktop", siteUrl);
+    const deadline = closeAt(context, until);
+    try {
+      const page = await context.newPage();
+      const { drain } = watchPage(page, siteUrl);
+      for (const url of urls) {
+        if (Date.now() > until) break;
+        drain();
+        const result = await visit(page, url);
+        const readable = await assertReadable(page).then(() => true, () => false);
+        const blocked = guards.get(context)?.blocked ?? (readable ? null : "The page could not be read safely.");
+        byUrl.get(url)?.push({
+          engine,
+          status: result.status,
+          ownIssues: splitIssues([...result.issues, ...drain()]).own,
+          blocked,
+        });
+        if (!readable) break;
+      }
+    } finally {
+      clearTimeout(deadline);
+      await context.close().catch(() => undefined);
+    }
+  }
+  return [...byUrl].map(([url, outcomes]) => ({ url, outcomes }));
+}
+
+export interface PageCapture {
+  url: string;
+  status: number;
+  png: Buffer | null;
+  /** Why no screenshot was taken, in words the customer can read. */
+  skipped: string | null;
+}
+
+/**
+ * Screenshots each page at one viewport. Animations are frozen and the caret is hidden. Video, iframes and
+ * elements marked data-testshift-ignore are masked, so they never cause false differences.
+ */
+export async function captureScreenshots(
+  browser: Browser,
+  siteUrl: string,
+  urls: string[],
+  viewport: "desktop" | "mobile",
+  until: number,
+): Promise<PageCapture[]> {
+  const context = await openContext(browser, viewport, siteUrl);
+  const deadline = closeAt(context, until);
+  const captures: PageCapture[] = [];
+  try {
+    const page = await context.newPage();
+    for (const url of urls) {
+      if (Date.now() > until) break;
+      const result = await visit(page, url);
+      const readable = await assertReadable(page).then(() => true, () => false);
+      if (!readable) {
+        captures.push({ url, status: result.status, png: null, skipped: "The page could not be read safely." });
+        break;
+      }
+      if (result.status < 200 || result.status >= 400) {
+        captures.push({ url, status: result.status, png: null, skipped: `The page returned HTTP ${result.status || "no response"}.` });
+        continue;
+      }
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      if (height > MAX_PAGE_HEIGHT) {
+        captures.push({ url, status: result.status, png: null, skipped: `The page is ${height} px tall; pages over ${MAX_PAGE_HEIGHT} px are not compared.` });
+        continue;
+      }
+      const png = await page.screenshot({
+        fullPage: true,
+        animations: "disabled",
+        caret: "hide",
+        type: "png",
+        mask: [page.locator("video, iframe, [data-testshift-ignore]")],
+        timeout: 15_000,
+      });
+      captures.push({ url, status: result.status, png: Buffer.from(png), skipped: null });
+    }
+  } finally {
+    clearTimeout(deadline);
+    await context.close().catch(() => undefined);
+  }
+  return captures;
+}
+
+/** Runs axe-core's WCAG 2.2 AA rules and a keyboard focus check on each page for the UAT agent. A page that can't be audited is skipped. */
 export async function accessibilityAudit(
   browser: Browser,
   siteUrl: string,
@@ -511,12 +654,13 @@ export async function accessibilityAudit(
         await page.evaluate(axe.source);
         const violations = await page.evaluate(async () => {
           const report = await window.axe.run(document, {
-            runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+            runOnly: { type: "tag", values: WCAG_TAGS },
             resultTypes: ["violations"],
           });
           return report.violations.map((v) => ({ id: v.id, impact: v.impact ?? null, help: v.help, count: v.nodes.length }));
         });
-        results.push({ url, violations });
+        const keyboard = await keyboardFocusProblems(page);
+        results.push({ url, violations: [...violations, ...keyboard] });
       } catch (e) {
         results.push({ url, violations: [], blocked: "The automated accessibility audit could not finish on this page." });
         if (e instanceof PrivateNetworkError || e instanceof BrowserPolicyError) break;

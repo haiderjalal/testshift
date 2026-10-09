@@ -190,6 +190,24 @@ export function HireForm({ defaultUrl, defaultPlan, defaultShift, prices }: Prop
       </div>
 
       <div>
+        <label htmlFor="requirements" className="font-medium">
+          Requirements to test <span className="font-normal text-graphite">(optional)</span>
+        </label>
+        <textarea
+          id="requirements"
+          name="requirements"
+          rows={4}
+          maxLength={8000}
+          placeholder={"e.g. Customers can apply a promo code at checkout.\nAn invalid promo code shows an error."}
+          aria-describedby="requirements-hint"
+          className={input}
+        />
+        <p id="requirements-hint" className="mt-2 text-sm text-graphite">
+          Plain text: user stories or acceptance criteria. We review the generated tests before any of them run.
+        </p>
+      </div>
+
+      <div>
         <label className="flex gap-3">
           <input type="checkbox" name="leaderboard" className="mt-1 size-4 accent-ink" />
           <span className="text-graphite">

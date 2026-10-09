@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { appUrl, sendEmail } from "@/lib/email";
+import { cleanRequirements, MAX_REQUIREMENTS_CHARS } from "@/lib/requirements";
 import { errorMessage, log } from "@/lib/log";
 import { emailKey, isPublicHost, siteKey } from "@/lib/net";
 import { createManualOrder, OrderError } from "@/lib/beta-orders";
@@ -63,6 +64,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
   }
 
   const { email, plan, hours, notes, company, leaderboard } = parsed.data;
+  const requirements = cleanRequirements(String(formData.get("requirements") ?? "").slice(0, MAX_REQUIREMENTS_CHARS));
   const trial = hours === "trial";
   // Store the normalised form: lowercase scheme and host, no trailing dot, percent-encoded characters.
   const target = new URL(parsed.data.url);
@@ -87,7 +89,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
       : await createManualOrder({ ...booking, hours: Number(hours) }, expectedHourly);
     // The booking already exists; failing to save listing details must not make the customer book twice.
     await db()`update runs set company_name = ${company || null}, leaderboard_opt_in = ${leaderboard === "on"},
-      leaderboard_site = ${siteKey(target.hostname)} where id = ${runId}`
+      leaderboard_site = ${siteKey(target.hostname)}, requirements = ${requirements} where id = ${runId}`
       .catch((e: unknown) => log("error", "Saving leaderboard details failed", { requestId, error: errorMessage(e) }));
     destination = `/runs/${runId}`;
   } catch (e) {

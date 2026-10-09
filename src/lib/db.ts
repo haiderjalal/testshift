@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { databaseTls } from "./security";
 
 import type { AgentId } from "./agents";
+import type { LatencySummary } from "./performance";
 import type { PlanId } from "./plans";
 
 const cache = globalThis as typeof globalThis & { sql?: postgres.Sql };
@@ -84,6 +85,8 @@ export interface Run {
   payment_confirmed_at?: Date | null;
   start_authorized_at?: Date | null;
   api_spec_url?: string | null;
+  api_latency?: LatencySummary | null;
+  requirements?: string | null;
 }
 
 export const BROWSER_ACTIONS = [
@@ -135,6 +138,8 @@ export const CATEGORIES = [
   "accessibility",
   "performance",
   "security",
+  "compatibility",
+  "exploratory",
 ] as const;
 
 export type CaseStatus = "pending" | "running" | "passed" | "failed" | "blocked";
@@ -144,6 +149,8 @@ export interface TestCase {
   id: string;
   seq: number;
   agent: AgentId;
+  /** The customer requirement this test traces to, when it came from requirements. */
+  requirement?: string | null;
   /** Feature id from the strategy (e.g. "F3"); null for automated checks. */
   feature: string | null;
   title: string;

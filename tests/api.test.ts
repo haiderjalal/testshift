@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { evaluateResponse, worstSeverity, type ApiResponse } from "../src/lib/api/checks";
 import { listOperations, type ApiOperation, type JsonObject } from "../src/lib/api/openapi";
-import { sendGet } from "../worker/api";
+import { sendGet } from "../src/lib/outbound";
 
 const origin = new URL("https://shop.example.com/");
 
