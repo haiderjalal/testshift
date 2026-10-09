@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { actionRequest } from "@/lib/action-security";
 import { isAdmin } from "@/lib/admin";
 import { confirmManualPayment, OrderError, quoteManualOrder, saveBetaPrice, startManualOrder } from "@/lib/beta-orders";
 import { parseUsd } from "@/lib/beta-pricing";
@@ -9,6 +10,8 @@ import { log } from "@/lib/log";
 export interface BetaActionState { error?: string; message?: string }
 
 export async function betaAdminAction(_previous: BetaActionState, data: FormData): Promise<BetaActionState> {
+  const requestId = await actionRequest(data);
+  if (!requestId) return { error: "Request rejected. Refresh and try again." };
   if (!(await isAdmin())) return { error: "Sign in as the administrator to manage orders." };
   const action = String(data.get("operation") ?? "");
   const id = String(data.get("id") ?? "");
@@ -29,7 +32,7 @@ export async function betaAdminAction(_previous: BetaActionState, data: FormData
   } catch (e) {
     if (e instanceof OrderError) return { error: e.message };
     if (e && typeof e === "object" && "code" in e && e.code === "23505") return { error: "That Wise transaction reference is already assigned to another order." };
-    log("error", "Beta order operation failed", { operation: action });
+    log("error", "Beta order operation failed", { requestId, operation: action });
     return { error: "The update failed. Refresh and try again; do not confirm another payment." };
   }
   revalidatePath("/admin"); revalidatePath("/hire"); revalidatePath("/");

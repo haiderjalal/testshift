@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { actionRequest } from "@/lib/action-security";
+import { normalizeText } from "@/lib/security";
 
 import postgres from "postgres";
 import { z } from "zod";
@@ -40,14 +42,16 @@ const bookingSchema = z.object({
 });
 
 export async function bookShift(_prev: BookingState, formData: FormData): Promise<BookingState> {
+  const requestId = await actionRequest(formData);
+  if (!requestId) return { message: "Request rejected. Refresh and try again." };
   const raw = {
     url: String(formData.get("url") ?? "").trim(),
     email: String(formData.get("email") ?? "").trim(),
     plan: formData.get("plan"),
     hours: formData.get("hours"),
-    notes: String(formData.get("notes") ?? "").trim(),
+    notes: normalizeText(String(formData.get("notes") ?? "")),
     consent: formData.get("consent"),
-    company: String(formData.get("company") ?? "").trim(),
+    company: normalizeText(String(formData.get("company") ?? "")),
     leaderboard: formData.get("leaderboard") ?? undefined,
   };
   const parsed = bookingSchema.safeParse(raw);
@@ -84,7 +88,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     // The booking already exists; failing to save listing details must not make the customer book twice.
     await db()`update runs set company_name = ${company || null}, leaderboard_opt_in = ${leaderboard === "on"},
       leaderboard_site = ${siteKey(target.hostname)} where id = ${runId}`
-      .catch((e: unknown) => log("error", "Saving leaderboard details failed", { error: errorMessage(e) }));
+      .catch((e: unknown) => log("error", "Saving leaderboard details failed", { requestId, error: errorMessage(e) }));
     destination = `/runs/${runId}`;
   } catch (e) {
     if (e instanceof OrderError) return { message: e.message };
@@ -101,7 +105,7 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
         },
       };
     }
-    log("error", "Booking failed", { error: errorMessage(e) });
+    log("error", "Booking failed", { requestId, error: errorMessage(e) });
     return { message: "We couldn't start your booking. Please try again in a minute." };
   }
   // The booking is saved above, so a failed email never loses it; it is always on /admin.

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Familjen_Grotesk, JetBrains_Mono, Unbounded } from "next/font/google";
 
 import { PipelineScene } from "@/components/scene/PipelineScene";
@@ -18,7 +19,8 @@ export const metadata: Metadata = {
   twitter: { card: "summary", title: SITE.name, description: SITE.description },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection(); // Nonces must be generated and rendered for each request.
   return (
     <html
       lang="en"

@@ -98,7 +98,7 @@ The schema is in `supabase/migrations/`. RLS is on with no policies, so Supabase
 
 **v2: bigger value**
 - **Logged-in testing**: encrypted test credentials, or a recorded login step.
-- **Unit tests**: connect a GitHub repo, and the agent writes and runs unit tests in a sandbox (for example Vercel Sandbox), then opens a PR.
+- **Unit tests**: GitHub App connections and execution of reviewed suites in GitHub-hosted Actions are implemented; see [GitHub setup](GITHUB_TESTING.md). AI-written source tests, managed application provisioning and opt-in pull request creation remain future work.
 - **Regression shifts**: re-run the exported suite on a schedule or on each deploy, and bill per run.
 - Customer accounts and teams, shift history, and comparisons between shifts.
 - Video recording of each failed test.

@@ -30,7 +30,7 @@ Current hardening evidence and release gates: [QA_AUDIT.md](QA_AUDIT.md). Detail
 | UAT | User acceptance | End-to-end tests | 30% | Complete customer journeys with acceptance criteria; automated accessibility audit on Lead and up |
 | Prod | Production | Smoke tests | 15% | Every page loads fast and error-free, critical paths work; go / no-go verdict |
 
-The "unit tests" are **unit-level UI tests** done through the browser, because the tester only has a URL. Real unit tests against source code need a GitHub connection (roadmap). This is stated on the site's FAQ.
+The URL-only agent's "unit tests" are **unit-level UI tests** done through the browser. The separate GitHub integration now connects administrator-authorized repositories and runs their reviewed unit/integration/E2E commands in GitHub-hosted Actions. See [GitHub setup](GITHUB_TESTING.md). Automatic source-level test generation with AI remains roadmap work.
 
 **What the customer gets at the end of a shift**
 - A deterministic score over evaluated checks (no score when none ran), and No-go, Incomplete, Go with caution or Go. Coverage gaps cannot be reported as a clean release.
@@ -351,7 +351,7 @@ npm run lint && npm run typecheck && npm run check && npm run build
 
 **Later:**
 - Logged-in testing.
-- Real unit tests via GitHub.
+- AI-generated source-level tests via GitHub; existing reviewed suites already run through the repository CI integration.
 - Scheduled regression shifts.
 - Customer accounts.
 - Video of failed tests.

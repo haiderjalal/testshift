@@ -24,9 +24,13 @@ export async function sendEmail({ to, subject, text, replyTo }: Email): Promise<
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   // Logs carry a kind, never the subject: subjects can contain customers' names.
-  const kind = subject.split(" ")[0] ?? "email";
+  const kind = subject.startsWith("Your QA report") ? "report" : subject.startsWith("New custom pricing") ? "quote" : "booking";
   if (!key || !from) {
     log("warn", "Email not configured (RESEND_API_KEY / EMAIL_FROM); skipping", { kind });
+    return false;
+  }
+  if ([to, from, replyTo ?? ""].some((value) => /[\r\n\u0000]/.test(value))) {
+    log("warn", "Email header rejected", { kind });
     return false;
   }
   try {
@@ -47,6 +51,7 @@ export async function sendEmail({ to, subject, text, replyTo }: Email): Promise<
       log("error", "Email failed", { status: res.status, kind });
       return false;
     }
+    log("info", "Email delivered", { kind });
     return true;
   } catch (e) {
     log("error", "Email failed", { error: errorMessage(e), kind });

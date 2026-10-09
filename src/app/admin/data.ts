@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isAdmin } from "@/lib/admin";
 import { PLAN_IDS, type PlanId } from "@/lib/plans";
 import { loadBetaPrices } from "@/lib/beta-orders";
 
@@ -65,6 +66,8 @@ const TOTALS = `
   count(*)::int as calls`;
 
 export async function loadDashboard(period: Period) {
+  if (!(await isAdmin())) throw new Error("Unauthorized");
+  if (!Object.hasOwn(PERIODS, period)) throw new Error("Invalid period");
   const sql = db();
   const from = since(period);
   const totals = () => sql.unsafe(TOTALS);

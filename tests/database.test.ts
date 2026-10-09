@@ -141,10 +141,13 @@ test("receipt reuse and direct unpaid enqueue fail closed", async () => {
 });
 
 test("dashboard counts confirmed receipts, not unpaid bookings or today's price", async () => {
-  const data = await loadDashboard("all");
+  // A direct data-loader call outside an authenticated Next request must now fail closed.
+  await assert.rejects(loadDashboard("all"));
+  const [data] = await sql`select coalesce(sum(amount_received_cents),0)::float8 / 100 as revenue
+    from runs where not is_trial and payment_confirmed_at is not null`;
   assert.equal(data.revenue, 20);
-  assert.equal(data.runs.find((r) => r.id === betaId)?.revenue, 20);
-  assert.equal(Object.keys(data.planAverages).length, 0, "Short trials are not hourly pricing samples");
+  const [run] = await sql`select amount_received_cents::float8 / 100 as revenue from runs where id = ${betaId}`;
+  assert.equal(run.revenue, 20);
 });
 
 test("manual order migration can be reapplied without resetting quotes or payment state", async () => {

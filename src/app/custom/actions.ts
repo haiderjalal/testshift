@@ -1,6 +1,9 @@
 "use server";
 
 import { z } from "zod";
+import { actionRequest } from "@/lib/action-security";
+import { normalizeText } from "@/lib/security";
+import { repositoryBrief, repositoryRequest } from "@/lib/repository-testing";
 
 import { db } from "@/lib/db";
 import { appUrl, sendEmail } from "@/lib/email";
@@ -12,7 +15,7 @@ const QUOTES_PER_IP_PER_HOUR = 5;
 export interface CustomState {
   sent?: boolean;
   message?: string;
-  errors?: Partial<Record<"name" | "email" | "company" | "website" | "details", string>>;
+  errors?: Partial<Record<"name" | "email" | "company" | "website" | "details" | "mode" | "repository" | "destructive", string>>;
 }
 
 const schema = z.object({
@@ -28,16 +31,24 @@ const schema = z.object({
 });
 
 export async function requestQuote(_prev: CustomState, formData: FormData): Promise<CustomState> {
+  const requestId = await actionRequest(formData);
+  if (!requestId) return { message: "Request rejected. Refresh and try again." };
   // Honeypot: people never see this field, bots fill it in. Pretend success so bots learn nothing.
   if (String(formData.get("fax") ?? "") !== "") return { sent: true };
 
   const parsed = schema.safeParse({
-    name: formData.get("name") ?? "",
+    name: normalizeText(String(formData.get("name") ?? "")),
     email: String(formData.get("email") ?? "").trim(),
-    company: formData.get("company") ?? "",
-    website: formData.get("website") ?? "",
-    details: formData.get("details") ?? "",
+    company: normalizeText(String(formData.get("company") ?? "")),
+    website: normalizeText(String(formData.get("website") ?? "")),
+    details: normalizeText(String(formData.get("details") ?? "")),
   });
+  const scope = repositoryRequest.safeParse({
+    mode: formData.get("mode") ?? "website",
+    repository: formData.get("repository") ?? "",
+    destructive: formData.get("destructive") ?? "",
+  });
+  if (!scope.success) return { errors: Object.fromEntries(scope.error.issues.map((issue) => [String(issue.path[0]), issue.message])) as CustomState["errors"] };
   if (!parsed.success) {
     return {
       errors: Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])) as CustomState["errors"],
@@ -45,18 +56,20 @@ export async function requestQuote(_prev: CustomState, formData: FormData): Prom
   }
 
   const { name, email, company, website, details } = parsed.data;
+  const brief = repositoryBrief(scope.data, details);
+  if (brief.length > 3000) return { errors: { details: "Shorten your request so the repository details and message fit within 3,000 characters." } };
   try {
     if (!(await allow(`quote:${await clientKey()}`, QUOTES_PER_IP_PER_HOUR, 3_600))) {
       return { message: "You've sent several requests already. We'll reply to those first." };
     }
     await db()`
       insert into custom_requests (name, email, company, website, message)
-      values (${name}, ${email}, ${company}, ${website}, ${details})`;
+      values (${name}, ${email}, ${company}, ${website}, ${brief})`;
   } catch (e) {
-    log("error", "Custom request failed", { error: errorMessage(e) });
+    log("error", "Custom request failed", { requestId, error: errorMessage(e) });
     return { message: "We couldn't send your request. Please try again in a minute." };
   }
-  log("info", "Custom pricing request received");
+  log("info", "Custom pricing request received", { requestId });
 
   // Saved above first, so the request is never lost if the email fails; it is always on /admin.
   const owner = process.env.OWNER_EMAIL;
@@ -72,7 +85,7 @@ export async function requestQuote(_prev: CustomState, formData: FormData): Prom
         `Website: ${website || "-"}`,
         "",
         "What they need:",
-        details,
+        brief,
         "",
         `Reply to this email to answer them, or see all requests at ${appUrl()}/admin`,
       ].join("\n"),

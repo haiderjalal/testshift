@@ -73,6 +73,13 @@ export function Pricing({ prices }: { prices: BetaPrices }) {
           Request a quote
         </Link>
       </article>
+      <article className="mt-5 flex flex-col gap-5 rounded-2xl border border-rule bg-card/80 p-8 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="font-display text-2xl font-semibold">Have a GitHub repository?</h3>
+          <p className="mt-2 max-w-2xl text-graphite">Request repository testing or CI setup, including a plan for destructive checks in a disposable environment.</p>
+        </div>
+        <Link href="/github-agent" className="btn-primary min-h-12 shrink-0 px-5">Explore GitHub & CI</Link>
+      </article>
     </section>
   );
 }

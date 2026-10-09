@@ -48,12 +48,16 @@ export function isPrivateIp(address: string): boolean {
 /** True when the host resolves only to public addresses, so the tester can't be pointed at internal networks. */
 export async function isPublicHost(hostname: string): Promise<boolean> {
   const host = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
+    const addresses = isIP(host) ? [{ address: host }] : await Promise.race([
+      lookup(host, { all: true }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("DNS timeout")), 5_000); }),
+    ]);
     return addresses.length > 0 && addresses.every((a) => !isPrivateIp(a.address));
   } catch {
     return false; // unresolvable hosts can't be tested either
-  }
+  } finally { clearTimeout(timer); }
 }
 
 /**
