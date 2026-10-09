@@ -40,9 +40,9 @@ const blocked = (url: string, actual: string): LoadCheck => ({
  * Light load on an approved test environment only. The host needs a current approval record and a verified
  * domain. Requests are GETs of the home page, held to the approval's limits, which are clamped to the hard ceilings.
  */
-export async function runLoadCheck(siteUrl: string, until: number, deps: LoadDeps = {}): Promise<LoadCheck> {
+export async function runLoadCheck(siteUrl: string, until: number, emailKey: string, deps: LoadDeps = {}): Promise<LoadCheck> {
   const site = new URL(siteUrl);
-  const gate = await checkTestEnvironment(siteUrl, "load");
+  const gate = await checkTestEnvironment(siteUrl, "load", emailKey);
   if (!gate.ok) return blocked(siteUrl, gate.reason);
   const durationMs = Math.min(DEFAULT_DURATION_MS, until - Date.now());
   if (durationMs < MIN_DURATION_MS) {

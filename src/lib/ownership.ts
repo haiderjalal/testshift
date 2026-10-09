@@ -79,14 +79,19 @@ export async function getOrCreateVerification(host: string): Promise<SiteVerific
   return row;
 }
 
-export async function markVerified(host: string, method: VerificationMethod): Promise<void> {
-  await db()`update site_verifications set verified_at = now(), verified_method = ${method} where host = ${host}`;
+/** Records who proved control, so only that customer inherits the verified status. */
+export async function markVerified(host: string, method: VerificationMethod, emailKey: string): Promise<void> {
+  await db()`update site_verifications set verified_at = now(), verified_method = ${method}, verified_email_key = ${emailKey} where host = ${host}`;
 }
 
-/** True only while the most recent verification is fresh. Active tests call this before every run. */
-export async function isSiteVerified(host: string): Promise<boolean> {
+/**
+ * True only while the most recent verification is fresh AND was done by this customer. Binding to the booker
+ * stops anyone who later books the same host from inheriting active tests on a domain they did not prove they own.
+ */
+export async function isSiteVerified(host: string, emailKey: string): Promise<boolean> {
   const [row] = await db()<{ ok: boolean }[]>`
-    select coalesce(verified_at > now() - make_interval(days => ${VERIFICATION_DAYS}), false) as ok
+    select coalesce(verified_at > now() - make_interval(days => ${VERIFICATION_DAYS})
+      and verified_email_key is not null and verified_email_key = ${emailKey}, false) as ok
     from site_verifications where host = ${host}`;
   return row?.ok ?? false;
 }

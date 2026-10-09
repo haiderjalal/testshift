@@ -65,6 +65,11 @@ export function importPostmanEndpoints(text: string, site: URL): PostmanImport {
       continue;
     }
     const path = url.pathname.slice(0, MAX_PATH_LENGTH);
+    // A path must be a single leading slash: "//host/x" would resolve to another origin when joined later.
+    if (!/^\/(?!\/)/.test(path)) {
+      skipped++;
+      continue;
+    }
     const key = `${method} ${path}`;
     if (seen.has(key)) continue;
     seen.add(key);

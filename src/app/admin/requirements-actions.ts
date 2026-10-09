@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { actionRequest } from "@/lib/action-security";
 import { isAdmin } from "@/lib/admin";
 import { db, isUuid } from "@/lib/db";
 import { errorMessage, log } from "@/lib/log";
@@ -9,7 +10,7 @@ import { approveRequirementTest, FINISHED_STATUSES } from "@/lib/requirement-app
 
 /** Asks the worker to generate tests from a run's requirements. The worker picks it up when idle. */
 export async function requestRequirementTests(formData: FormData): Promise<void> {
-  if (!(await isAdmin())) return;
+  if (!(await actionRequest(formData)) || !(await isAdmin())) return;
   const runId = String(formData.get("runId") ?? "");
   if (!isUuid(runId)) return;
   await db()`
@@ -23,7 +24,7 @@ export async function requestRequirementTests(formData: FormData): Promise<void>
  * requirement it traces to. Approved tests then run like any other test in the shift.
  */
 export async function decideRequirementTest(formData: FormData): Promise<void> {
-  if (!(await isAdmin())) return;
+  if (!(await actionRequest(formData)) || !(await isAdmin())) return;
   const id = String(formData.get("id") ?? "");
   const decision = String(formData.get("decision") ?? "");
   if (!isUuid(id) || (decision !== "approve" && decision !== "reject")) return;

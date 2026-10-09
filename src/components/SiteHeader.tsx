@@ -12,6 +12,9 @@ export function SiteHeader({ showNav = true }: { showNav?: boolean }) {
             <Link href="/#agents" className="hidden text-graphite transition hover:text-ink sm:inline">
               Agents
             </Link>
+            <Link href="/#coverage" className="hidden text-graphite transition hover:text-ink sm:inline">
+              What we test
+            </Link>
             <Link href="/#pricing" className="hidden text-graphite transition hover:text-ink sm:inline">
               Pricing
             </Link>

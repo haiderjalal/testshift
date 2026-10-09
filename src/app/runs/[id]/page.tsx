@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/SiteHeader";
 import { db, isUuid, type Run, type TestCase } from "@/lib/db";
 import { emailConfigured } from "@/lib/email";
+import { emailKey } from "@/lib/net";
 import { formatDuration, PLANS } from "@/lib/plans";
 
 import { isSiteVerified, getOrCreateVerification, dnsRecordName, dnsRecordValue, VERIFICATION_DAYS, VERIFICATION_FILE_PATH } from "@/lib/ownership";
@@ -49,7 +50,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
     : [];
   const ownershipHost = new URL(run.url).hostname;
   const ownership = run.status === "completed"
-    ? { record: await getOrCreateVerification(ownershipHost), fresh: await isSiteVerified(ownershipHost) }
+    ? { record: await getOrCreateVerification(ownershipHost), fresh: await isSiteVerified(ownershipHost, emailKey(run.email)) }
     : null;
   const visualRows = run.status === "completed"
     ? await db()<VisualSnapshotRow[]>`select id, path, viewport, status, changed_ratio, width, height,

@@ -38,7 +38,7 @@ const bookingSchema = z.object({
   notes: z.string().max(2000, { error: "Keep notes under 2,000 characters." }),
   // Shown publicly on the leaderboard, so no control characters or line breaks.
   company: z.string().max(80, { error: "Keep the name under 80 characters." })
-    .regex(/^[^\p{Cc}]*$/u, { error: "Use letters, numbers and punctuation only." }),
+    .regex(/^[^\p{Cc}\p{Cf}]*$/u, { error: "Use letters, numbers and punctuation only." }),
   leaderboard: z.literal("on").optional(),
   consent: z.literal("on", { error: "Confirm you're allowed to test this site." }),
 });
@@ -73,6 +73,11 @@ export async function bookShift(_prev: BookingState, formData: FormData): Promis
     return { errors: { url: "Remove the username or password from the link." } };
   }
   target.hostname = target.hostname.replace(/\.$/, "");
+  // Only standard web ports: the Node fetchers would otherwise reach non-web services (SMTP, SSH, databases)
+  // on a public host, which the browsers block themselves but these fetchers do not.
+  if (target.port && target.port !== "80" && target.port !== "443") {
+    return { errors: { url: "We test sites on the standard web ports (80 and 443). Remove the port from the link." } };
+  }
   const url = target.href;
   if (!(await isPublicHost(target.hostname))) {
     return { errors: { url: "We can only test websites that are publicly reachable on the internet." } };

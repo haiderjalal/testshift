@@ -36,6 +36,8 @@ export interface VisualInput {
   urls: string[];
   viewports: Viewport[];
   until: number;
+  /** The booker's email key: baselines are compared and approved per customer, not shared across a host. */
+  emailKey: string;
   /** Null when no image storage is configured on this deployment. */
   store: ImageStore | null;
   withLease: LeaseWrite;
@@ -114,7 +116,8 @@ async function compareCapture(c: CaptureInput): Promise<VisualCheck> {
   await c.store.put(currentKey, c.png);
 
   const [baseline] = await db()<{ storage_key: string }[]>`
-    select storage_key from visual_baselines where host = ${c.host} and path = ${path} and viewport = ${c.viewport}`;
+    select storage_key from visual_baselines
+    where host = ${c.host} and path = ${path} and viewport = ${c.viewport} and email_key = ${c.emailKey}`;
   const approved = baseline ? await c.store.get(baseline.storage_key) : null;
 
   if (!baseline || !approved) {
