@@ -138,6 +138,7 @@ export const CATEGORIES = [
   "performance",
   "security",
   "compatibility",
+  "exploratory",
 ] as const;
 
 export type CaseStatus = "pending" | "running" | "passed" | "failed" | "blocked";

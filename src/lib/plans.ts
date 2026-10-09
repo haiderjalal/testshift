@@ -21,7 +21,7 @@ interface Plan {
   pitch: string;
   features: readonly string[];
   /** Deterministic checks and viewports the worker enables for this plan. */
-  checks: { mobile: boolean; accessibility: boolean; performance: boolean; securityHeaders: boolean; visual: boolean };
+  checks: { mobile: boolean; accessibility: boolean; performance: boolean; securityHeaders: boolean; visual: boolean; exploratory: boolean };
   /** Principal shifts are claimed before everything else in the queue. */
   priority: boolean;
   focus: string;
@@ -42,7 +42,7 @@ export const PLANS = {
       "Desktop browser testing",
       "Bug report and Playwright suite",
     ],
-    checks: { mobile: false, accessibility: false, performance: false, securityHeaders: false, visual: false },
+    checks: { mobile: false, accessibility: false, performance: false, securityHeaders: false, visual: false, exploratory: false },
     priority: false,
     focus: "Stick to the core user journeys: navigation, forms, sign-up, search, cart and checkout if present.",
   },
@@ -58,7 +58,7 @@ export const PLANS = {
       "Negative and edge-case inputs",
       "Stronger reasoning on every test",
     ],
-    checks: { mobile: true, accessibility: false, performance: false, securityHeaders: false, visual: false },
+    checks: { mobile: true, accessibility: false, performance: false, securityHeaders: false, visual: false, exploratory: false },
     priority: false,
     focus:
       "Cover the core journeys, then go deeper: invalid and edge-case inputs, validation messages, mobile behaviour, empty and error states.",
@@ -75,7 +75,7 @@ export const PLANS = {
       "Performance audit: load speed and layout shift",
       "High-effort reasoning, more thorough plans",
     ],
-    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: false, visual: true },
+    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: false, visual: true, exploratory: true },
     priority: false,
     focus:
       "Be thorough: core journeys, edge cases and bad inputs, mobile behaviour, keyboard access and accessible names, loading and error states, and consistency across pages.",
@@ -92,7 +92,7 @@ export const PLANS = {
       "Security-header review",
       "Priority queue: your shift starts first",
     ],
-    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: true, visual: true },
+    checks: { mobile: true, accessibility: true, performance: true, securityHeaders: true, visual: true, exploratory: true },
     priority: true,
     focus:
       "Test like a principal engineer signing off a release: every core journey, the riskiest edge cases, state that persists across pages and reloads, mobile and keyboard use, and anything that could embarrass the team in production.",

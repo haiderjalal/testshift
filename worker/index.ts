@@ -17,6 +17,7 @@ import { launchEngine, launchExtraEngines } from "./engines";
 import { LeaseLostError, withRunLease } from "./lease";
 import { securityChecks } from "./security";
 import { runVisualChecks, type VisualCheck, type Viewport } from "./visual";
+import { exploreSite } from "./explore";
 import { configuredImageStore } from "@/lib/image-store";
 import type { SecurityCheck } from "@/lib/security-checks";
 
@@ -40,6 +41,8 @@ const MAX_BATCH = 12;
 const API_SHARE = 0.1;
 // Pages each browser loads for the cross-browser comparison. Every extra page costs one load per engine.
 const MAX_COMPAT_PAGES = 5;
+// Share of the UAT window that exploratory testing may use. The planned UAT tests get the rest.
+const EXPLORE_SHARE = 0.4;
 
 type Draft = CaseDraft & Partial<Pick<TestCase, "status" | "actual" | "severity">>;
 
@@ -242,6 +245,28 @@ function securityCase(a: PageAudit): Draft {
   };
 }
 
+/** Explores the site once per shift. Proposed scenarios become pending exploratory tests, run by the normal executor. */
+async function runExploration(run: Run, browser: Browser, pages: SitePage[], strategy: Strategy | null, until: number): Promise<void> {
+  const [{ done }] = await db()<{ done: boolean }[]>`select exists (select 1 from runs where id = ${run.id} and exploration is not null) as done`;
+  if (done) return;
+  await setActivity(run.id, "uat", "UAT agent · Exploring the site");
+  const explorationUntil = Date.now() + Math.max(0, until - Date.now()) * EXPLORE_SHARE;
+  const outcome = await exploreSite({
+    run,
+    browser,
+    pages,
+    strategy,
+    existing: await listCases(run.id),
+    until: explorationUntil,
+    stopAt: until,
+  });
+  await insertCases(run.id, "uat", outcome.drafts);
+  await withRunLease(run.id, lease.token, async (sql) => {
+    await sql`update runs set exploration = ${json(outcome.summary)} where id = ${run.id}`;
+  });
+  log("info", "Exploration finished", { runId: run.id, ...outcome.summary });
+}
+
 /** Maps one visual comparison to a UI test case. Blocked means not compared yet, never passed. */
 function visualCheckCase(c: VisualCheck): Draft {
   return {
@@ -399,6 +424,14 @@ async function runPhase(
 ) {
   const { agent } = window;
   await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt), engines);
+  if (agent.id === "uat" && PLANS[run.plan].checks.exploratory) {
+    try {
+      await runExploration(run, browser, pages, strategy, Math.min(window.to, stopAt));
+    } catch (e) {
+      if (e instanceof LeaseLostError) throw e;
+      log("error", "Exploratory testing failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
 
   while (Date.now() < Math.min(window.to, stopAt) && !lease.lost) {
     const [next] = await db()<TestCase[]>`
