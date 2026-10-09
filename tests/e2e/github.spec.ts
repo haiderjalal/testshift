@@ -21,19 +21,52 @@ test("connection cannot bind another installation or a repository without admini
   await context.addCookies([session(902)]); await page.goto("/repositories");
   await page.getByLabel("GitHub installation").selectOption("906");
   await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
-  await page.getByRole("checkbox", { name: /I administer this repository/ }).check();
-  await page.getByRole("button", { name: "Connect repository", exact: true }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Could not verify");
+  await page.getByRole("button", { name: "Find workflows", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not verify" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect repository", exact: true })).toHaveCount(0);
 });
 test("repository administrator can connect and sign out without exposing the user token", async ({ page, context }, info) => {
   await context.addCookies([session(info.project.name === "mobile" ? 904 : 903)]); await page.goto("/repositories");
   await page.getByLabel("GitHub installation").selectOption("905"); await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
+  await expect(page.getByLabel("Workflow path")).toHaveCount(0);
+  await page.getByRole("button", { name: "Find workflows", exact: true }).click();
+  await expect(page.getByLabel("Test workflow")).toHaveValue("911");
+  await expect(page.getByLabel("Test workflow").getByRole("option", { name: "Project quality checks" })).toHaveCount(1);
+  await page.locator("section").filter({ has: page.getByRole("heading", { name: "Connect a selected repository", exact: true }) }).screenshot({ path: info.outputPath("workflow-picker.png") });
   await page.getByRole("checkbox", { name: /I administer this repository/ }).check();
   await page.getByRole("button", { name: "Connect repository", exact: true }).click();
   await expect(page.locator("form").getByRole("status")).toContainText("Repository connected");
   expect(await page.content()).not.toContain("fixture-customer-token-901");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.getByRole("link", { name: "Sign in with GitHub", exact: true })).toBeVisible();
+});
+
+test("repositories without workflows offer setup guidance and changing repositories invalidates discovery", async ({ page, context }) => {
+  await context.addCookies([session(901)]); await page.goto("/repositories");
+  await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/empty-project");
+  await page.getByRole("button", { name: "Find workflows", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("No active workflows");
+  await expect(page.getByRole("link", { name: "Download test workflow starter", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect repository", exact: true })).toHaveCount(0);
+  await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/multiple-workflows");
+  await page.getByRole("button", { name: "Find workflows", exact: true }).click();
+  await expect(page.getByLabel("Test workflow")).toHaveValue("");
+  await page.getByLabel("Test workflow").selectOption("913");
+  await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
+  await expect(page.getByLabel("Test workflow")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Connect repository", exact: true })).toHaveCount(0);
+});
+
+test("forged workflow choices are rejected when connecting a repository", async ({ page, context }) => {
+  await context.addCookies([session(901)]); await page.goto("/repositories");
+  await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
+  await page.getByRole("button", { name: "Find workflows", exact: true }).click();
+  await expect(page.getByLabel("Test workflow")).toHaveValue("911");
+  await page.getByLabel("Test workflow").evaluate((element) => { (element as HTMLSelectElement).add(new Option("Forged choice", "999")); });
+  await page.getByLabel("Test workflow").selectOption("999");
+  await page.getByRole("checkbox", { name: /I administer this repository/ }).check();
+  await page.getByRole("button", { name: "Connect repository", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText("Could not verify");
 });
 test("GitHub webhook rejects forgery and accepts a signed idempotent delivery", async ({ request }) => {
   const body = JSON.stringify({ zen: "Disposable fixture" }); const delivery = randomUUID();
