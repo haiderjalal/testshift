@@ -1,16 +1,18 @@
-import { chromium, type Browser } from "playwright";
+import type { Browser } from "playwright";
 
 import { agentWindows, type Agent, type AgentId } from "@/lib/agents";
+import { judgeCompatibility, type CompatibilityResult, type EngineId } from "@/lib/compat";
 import { db, json, type Run, type Severity, type SitePage, type Strategy, type TestCase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
 import { PLANS } from "@/lib/plans";
 
 import { executeCase, planTests, writeReport, writeStrategy, type CaseDraft } from "./ai";
-import { accessibilityAudit, auditPages, crawlSite, registerEgressBrowser, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
+import { accessibilityAudit, auditPages, compatibilityAudit, crawlSite, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
 import { AiBudget, BudgetExceededError, DeadlineError, budgetLimit, endBudget, startBudget } from "./budget";
 import { runApiChecks } from "./api";
 import { startEgressProxy } from "./egress";
+import { launchEngine, launchExtraEngines } from "./engines";
 import { LeaseLostError, withRunLease } from "./lease";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
@@ -31,6 +33,8 @@ const MIN_BATCH = 5;
 const MAX_BATCH = 12;
 // Share of the time left after mapping that API checks may use. Agents get the rest.
 const API_SHARE = 0.1;
+// Pages each browser loads for the cross-browser comparison. Every extra page costs one load per engine.
+const MAX_COMPAT_PAGES = 5;
 
 type Draft = CaseDraft & Partial<Pick<TestCase, "status" | "actual" | "severity">>;
 
@@ -244,8 +248,13 @@ function accessibilityCase(r: AccessibilityResult): Draft {
     priority: "medium",
     viewport: "desktop",
     start_url: r.url,
-    steps: [`Open ${r.url}`, "Run the WCAG 2 A and AA automated rules"],
-    expected: "No WCAG 2 A/AA violations.",
+    steps: [
+      `Open ${r.url}`,
+      "Run the WCAG 2.2 A and AA automated rules",
+      "Tab through the first keyboard stops and check focus is visible",
+      "Automated checks cover only part of WCAG; alt-text meaning, reading order and captions still need manual review",
+    ],
+    expected: "No WCAG 2.2 A/AA violations and visible keyboard focus.",
     status: r.blocked ? "blocked" : r.violations.length ? "failed" : "passed",
     actual: r.blocked ?? (r.violations.length
       ? r.violations
@@ -257,11 +266,31 @@ function accessibilityCase(r: AccessibilityResult): Draft {
   };
 }
 
+/** One cross-browser case per page. Pages that no browser loads, or that every browser fails the same way, are not browser differences. */
+function compatibilityCase(r: CompatibilityResult): Draft | null {
+  const judged = judgeCompatibility(r);
+  if (judged.outcome === "not-comparable") return null;
+  return {
+    feature: null,
+    script: [],
+    title: `${pathOf(r.url)} works the same in every browser`,
+    category: "compatibility",
+    priority: "medium",
+    viewport: "desktop",
+    start_url: r.url,
+    steps: [`Open ${r.url} in each browser`, "Compare the HTTP status and the browser errors"],
+    expected: "Every browser loads the page and reports the same errors.",
+    status: judged.outcome,
+    actual: judged.detail,
+    severity: judged.severity,
+  };
+}
+
 /** Automated checks an agent runs before its AI-planned tests. Runs once per shift, even after a worker restart. */
-async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pages: SitePage[], until: number) {
+async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pages: SitePage[], until: number, engines: Map<EngineId, Browser>) {
   const checks = PLANS[run.plan].checks;
   const urls = pages.map((p) => p.url);
-  const categories = agent.id === "prod" ? ["smoke", "performance", "security"] : ["accessibility"];
+  const categories = agent.id === "prod" ? ["smoke", "performance", "security", "compatibility"] : ["accessibility"];
   if (agent.id !== "prod" && !(agent.id === "uat" && checks.accessibility)) return;
   const [{ done }] = await db()<{ done: boolean }[]>`
     select exists (select 1 from test_cases where run_id = ${run.id} and agent = ${agent.id}
@@ -279,6 +308,11 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
   const drafts: Draft[] = audits.map(smokeCase);
   if (checks.performance) drafts.push(...audits.map(performanceCase).filter((d): d is Draft => d !== null));
   if (checks.securityHeaders && audits[0]) drafts.push(securityCase(audits[0]));
+  if (engines.size > 1) {
+    await setActivity(run.id, agent.id, `${agent.name} · Comparing browsers`);
+    const compared = await compatibilityAudit(engines, run.url, urls.slice(0, MAX_COMPAT_PAGES), until);
+    drafts.push(...compared.map(compatibilityCase).filter((d): d is Draft => d !== null));
+  }
   await insertCases(run.id, agent.id, drafts);
 }
 
@@ -290,9 +324,10 @@ async function runPhase(
   strategy: Strategy | null,
   window: { agent: Agent; to: number },
   stopAt: number,
+  engines: Map<EngineId, Browser>,
 ) {
   const { agent } = window;
-  await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt));
+  await seedAutomatedChecks(run, browser, agent, pages, Math.min(window.to, stopAt), engines);
 
   while (Date.now() < Math.min(window.to, stopAt) && !lease.lost) {
     const [next] = await db()<TestCase[]>`
@@ -352,7 +387,7 @@ async function runApiPhase(run: Run, stopAt: number): Promise<void> {
   log("info", "API checks stored", { runId: run.id, operations: rows.length, spec: Boolean(specUrl) });
 }
 
-async function runShift(run: Run, browser: Browser, stopAt: number): Promise<void> {
+async function runShift(run: Run, browser: Browser, stopAt: number, engines: Map<EngineId, Browser>): Promise<void> {
   const start = run.started_at?.getTime() ?? Date.now();
 
   let pages = run.site_map;
@@ -395,7 +430,7 @@ async function runShift(run: Run, browser: Browser, stopAt: number): Promise<voi
   for (const window of windows) {
     if (Date.now() >= window.to) continue; // phase already over (resumed run); Prod's window ends at stopAt
     try {
-      await runPhase(run, browser, pages, strategy, window, stopAt);
+      await runPhase(run, browser, pages, strategy, window, stopAt, engines);
     } catch (e) {
       if (e instanceof LeaseLostError) throw e;
       // One agent failing (an API outage, a browser crash) must not cost the customer the other agents.
@@ -419,6 +454,7 @@ async function processRun(run: Run): Promise<void> {
       .catch((e) => log("warn", "Heartbeat failed", { runId: run.id, error: errorMessage(e) }));
   }, HEARTBEAT_MS);
   let browser: Browser | null = null;
+  let engines = new Map<EngineId, Browser>();
   let proxy: Awaited<ReturnType<typeof startEgressProxy>> | null = null;
   log("info", "Shift started", { runId: run.id, plan: run.plan, minutes: run.minutes, trial: run.is_trial });
 
@@ -426,10 +462,10 @@ async function processRun(run: Run): Promise<void> {
     const [{ spent }] = await db()<{ spent: number }[]>`select coalesce(sum(cost_usd), 0)::float8 as spent from ai_usage where run_id = ${run.id}`;
     startBudget(run.id, new AiBudget(budgetLimit(run.plan, run.minutes, run.is_trial, run.quoted_total_cents), spent));
     proxy = await startEgressProxy();
-    browser = await chromium.launch({ proxy: { server: proxy.server }, args: ["--proxy-bypass-list=<-loopback>", "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
-    registerEgressBrowser(browser, proxy.server);
+    browser = await launchEngine("chromium", proxy.server);
+    engines = new Map<EngineId, Browser>([["chromium", browser], ...(await launchExtraEngines(proxy.server))]);
     try {
-      await runShift(run, browser, stopAt);
+      await runShift(run, browser, stopAt, engines);
     } catch (e) {
       if (e instanceof LeaseLostError) throw e;
       // Keep what was tested so far and still deliver a report.
@@ -461,6 +497,7 @@ async function processRun(run: Run): Promise<void> {
   } finally {
     clearInterval(heartbeat);
     await browser?.close().catch(() => undefined);
+    for (const extra of engines.values()) await extra.close().catch(() => undefined);
     await proxy?.close().catch(() => undefined);
     endBudget(run.id);
   }

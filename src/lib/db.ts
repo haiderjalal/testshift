@@ -135,6 +135,7 @@ export const CATEGORIES = [
   "accessibility",
   "performance",
   "security",
+  "compatibility",
 ] as const;
 
 export type CaseStatus = "pending" | "running" | "passed" | "failed" | "blocked";

@@ -15,7 +15,9 @@
     "test:e2e": "playwright test",
     "security:scan": "node --import tsx scripts/security-scan.ts",
     "github:worker": "node --env-file-if-exists=.env.local --import tsx scripts/github-worker.ts",
-    "github:validate-generated": "node --import tsx scripts/validate-generated-suite.ts"
+    "github:validate-generated": "node --import tsx scripts/validate-generated-suite.ts",
+    "check:engines": "node --import tsx scripts/check-engines.ts",
+    "check:keyboard": "node --import tsx scripts/check-keyboard.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.129.0",
