@@ -9,7 +9,7 @@
     "lint": "eslint",
     "worker": "node --env-file-if-exists=.env.local --import tsx worker/index.ts",
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "check": "node --import tsx scripts/selfcheck.ts",
     "test": "node --import tsx --test tests/*.test.ts && node --test github-action/runner.test.mjs",
     "test:e2e": "playwright test",
