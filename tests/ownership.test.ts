@@ -6,7 +6,7 @@ import { checkOwnership, dnsRecordName, dnsRecordValue, fileMatches, txtRecordsM
 const TOKEN = "abcDEF123_-token-with-enough-length-1234";
 
 const noDns = async (): Promise<string[][]> => [];
-const noFile = async () => ({ status: 404, contentType: "text/plain", body: "", latencyMs: 1, truncated: false });
+const noFile = async () => ({ status: 404, contentType: "text/plain", body: "", latencyMs: 1, truncated: false, headers: {} });
 
 function lookups(overrides: Partial<OwnershipLookups>): OwnershipLookups {
   return { resolveTxt: noDns, fetchFile: noFile, ...overrides };
@@ -57,7 +57,7 @@ test("checkOwnership: falls back to the file on the site when DNS has nothing", 
     lookups({
       fetchFile: async (url) => {
         requested = url.href;
-        return { status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: false };
+        return { status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: false, headers: {} };
       },
     }),
   );
@@ -83,7 +83,7 @@ test("checkOwnership: failed lookups and wrong values are never treated as verif
   const wrongFile = await checkOwnership(
     "shop.example.com",
     TOKEN,
-    lookups({ fetchFile: async () => ({ status: 200, contentType: "text/plain", body: "someone-else", latencyMs: 1, truncated: false }) }),
+    lookups({ fetchFile: async () => ({ status: 200, contentType: "text/plain", body: "someone-else", latencyMs: 1, truncated: false, headers: {} }) }),
   );
   assert.equal(wrongFile, null);
 });
@@ -92,14 +92,14 @@ test("checkOwnership: a redirect or an oversized file is not accepted", async ()
   const redirect = await checkOwnership(
     "shop.example.com",
     TOKEN,
-    lookups({ fetchFile: async () => ({ status: 302, contentType: "", body: TOKEN, latencyMs: 1, truncated: false }) }),
+    lookups({ fetchFile: async () => ({ status: 302, contentType: "", body: TOKEN, latencyMs: 1, truncated: false, headers: {} }) }),
   );
   assert.equal(redirect, null);
 
   const huge = await checkOwnership(
     "shop.example.com",
     TOKEN,
-    lookups({ fetchFile: async () => ({ status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: true }) }),
+    lookups({ fetchFile: async () => ({ status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: true, headers: {} }) }),
   );
   assert.equal(huge, null);
 });
@@ -114,7 +114,7 @@ test("checkOwnership: IP-address hosts skip DNS and still allow the file method"
         dnsAsked = true;
         return [];
       },
-      fetchFile: async () => ({ status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: false }),
+      fetchFile: async () => ({ status: 200, contentType: "text/plain", body: TOKEN, latencyMs: 1, truncated: false, headers: {} }),
     }),
   );
   assert.equal(dnsAsked, false);

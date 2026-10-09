@@ -2,6 +2,7 @@ import { lookup } from "node:dns/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 
 import { isPrivateIp } from "./net";
 
@@ -31,10 +32,14 @@ export interface HttpResponse {
   latencyMs: number;
   /** True when the body was larger than MAX_RESPONSE_BYTES. */
   truncated: boolean;
+  /** Lower-case header names. Repeated headers (Set-Cookie) are joined with newlines. */
+  headers: Record<string, string>;
 }
 
 export interface SendOptions {
   timeoutMs: number;
+  /** Extra request headers, e.g. an Origin for a cross-origin check. Never credentials. */
+  headers?: Record<string, string>;
   /** Override only in tests. Production always resolves through the public-address check. */
   resolve?: (hostname: string) => Promise<string>;
 }
@@ -56,7 +61,7 @@ export async function sendGet(url: URL, options: SendOptions): Promise<HttpRespo
       url,
       {
         method: "GET",
-        headers: { accept: "application/json, */*;q=0.5", "user-agent": USER_AGENT },
+        headers: { accept: "application/json, */*;q=0.5", "user-agent": USER_AGENT, ...options.headers },
         timeout: options.timeoutMs,
         // Node asks for every address when connecting with happy-eyeballs; the pinned answer satisfies both forms.
         lookup: (_hostname, lookupOptions, callback) =>
@@ -68,6 +73,12 @@ export async function sendGet(url: URL, options: SendOptions): Promise<HttpRespo
     req.on("error", reject);
     req.end();
   });
+}
+
+function flattenHeaders(raw: IncomingMessage["headers"]): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(raw).map(([name, value]) => [name, Array.isArray(value) ? value.join("\n") : String(value ?? "")]),
+  );
 }
 
 function readBody(res: IncomingMessage, started: number, resolve: (value: HttpResponse) => void): void {
@@ -90,6 +101,35 @@ function readBody(res: IncomingMessage, started: number, resolve: (value: HttpRe
       body: Buffer.concat(chunks).toString("utf8"),
       latencyMs: performance.now() - started,
       truncated,
+      headers: flattenHeaders(res.headers),
     });
+  });
+}
+
+export interface CertificateStatus {
+  /** When the certificate stops being valid. */
+  validTo: Date;
+  daysLeft: number;
+}
+
+/**
+ * Reads the site's TLS certificate over the same public address the check validated. Node's own verification
+ * runs too, so an untrusted, expired or mismatched certificate fails here with its error code.
+ */
+export async function certificateStatus(hostname: string, options: { timeoutMs: number }): Promise<CertificateStatus> {
+  const address = await resolvePublicAddress(hostname);
+  return new Promise<CertificateStatus>((resolve, reject) => {
+    const socket = tlsConnect({ host: address, port: 443, servername: hostname, rejectUnauthorized: true }, () => {
+      const cert = socket.getPeerCertificate();
+      socket.end();
+      if (!cert?.valid_to) {
+        reject(new Error("NO_CERTIFICATE"));
+        return;
+      }
+      const validTo = new Date(cert.valid_to);
+      resolve({ validTo, daysLeft: Math.floor((validTo.getTime() - Date.now()) / 86_400_000) });
+    });
+    socket.setTimeout(options.timeoutMs, () => socket.destroy(new Error("TLS_TIMEOUT")));
+    socket.on("error", (error: NodeJS.ErrnoException) => reject(new Error(error.code ?? "TLS_ERROR")));
   });
 }

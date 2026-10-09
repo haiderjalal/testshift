@@ -2,6 +2,7 @@ import type { Browser } from "playwright";
 
 import { agentWindows, type Agent, type AgentId } from "@/lib/agents";
 import { judgeCompatibility, type CompatibilityResult, type EngineId } from "@/lib/compat";
+import { isSiteVerified } from "@/lib/ownership";
 import { db, json, type Run, type Severity, type SitePage, type Strategy, type TestCase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
@@ -14,6 +15,8 @@ import { runApiChecks } from "./api";
 import { startEgressProxy } from "./egress";
 import { launchEngine, launchExtraEngines } from "./engines";
 import { LeaseLostError, withRunLease } from "./lease";
+import { securityChecks } from "./security";
+import type { SecurityCheck } from "@/lib/security-checks";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
 const MINUTES_PER_HOUR = process.env.NODE_ENV === "production" ? 60 : Number(process.env.SHIFT_MINUTES_PER_HOUR ?? 60);
@@ -237,6 +240,24 @@ function securityCase(a: PageAudit): Draft {
   };
 }
 
+/** Maps one passive or active security check to a test case. A null result is blocked, not passed. */
+function securityCheckCase(c: SecurityCheck, url: string): Draft {
+  return {
+    feature: null,
+    script: [],
+    title: c.title,
+    category: "security",
+    priority: "medium",
+    viewport: "desktop",
+    start_url: url,
+    steps: c.steps,
+    expected: c.expected,
+    status: c.passed === null ? "blocked" : c.passed ? "passed" : "failed",
+    actual: c.actual,
+    severity: c.severity,
+  };
+}
+
 /** UAT accessibility check per page from axe-core's WCAG 2 A/AA rules (Lead and Principal plans). */
 function accessibilityCase(r: AccessibilityResult): Draft {
   const serious = r.violations.some((v) => v.impact === "critical" || v.impact === "serious");
@@ -307,7 +328,17 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
   const audits = await auditPages(browser, run.url, urls, { vitals: checks.performance, until });
   const drafts: Draft[] = audits.map(smokeCase);
   if (checks.performance) drafts.push(...audits.map(performanceCase).filter((d): d is Draft => d !== null));
-  if (checks.securityHeaders && audits[0]) drafts.push(securityCase(audits[0]));
+  if (checks.securityHeaders && audits[0]) {
+    drafts.push(securityCase(audits[0]));
+    // Isolated: a failure in the extended checks must not cost the release checks above.
+    try {
+      const verified = await isSiteVerified(new URL(run.url).hostname);
+      const checked = await securityChecks({ siteUrl: run.url, pageHeaders: audits[0].headers, verified, until });
+      drafts.push(...checked.map((c) => securityCheckCase(c, run.url)));
+    } catch (e) {
+      log("error", "Security checks failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
   if (engines.size > 1) {
     await setActivity(run.id, agent.id, `${agent.name} · Comparing browsers`);
     const compared = await compatibilityAudit(engines, run.url, urls.slice(0, MAX_COMPAT_PAGES), until);
