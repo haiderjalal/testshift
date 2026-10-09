@@ -59,7 +59,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
         ) : run.status === "failed" ? (
           <div role="alert" className="glass mt-10 rounded-2xl border-fail/40 p-6">
             <p className="font-display text-lg font-semibold">This shift stopped early.</p>
-            <p className="mt-2 text-graphite">{run.error}</p>
+            <p className="mt-2 text-graphite">The tester stopped before finishing. Contact support with the link to this page.</p>
           </div>
         ) : run.status === "pending_payment" || run.status === "paid" ? (
           run.payment_method !== "wise" && <p className="mt-6">This legacy order is on hold. Email {BETA_CONTACT.email} with your order reference for beta onboarding.</p>

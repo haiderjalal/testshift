@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test("Wise beta order locks its quote, confirms payment separately, and requires admin start", async ({ page, context, playwright }, info) => {
   await page.goto("/hire?plan=junior&hours=2&url=https%3A%2F%2F8.8.8.8%2F");
   await page.getByLabel("Email for the report").fill(`beta-${info.project.name}@example.com`);
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /I own this website/ }).check();
   await page.getByRole("button", { name: "Request 2-hour shift · $20.00" }).click();
   await expect(page).toHaveURL(/\/runs\/[\da-f-]+$/);
   const orderUrl = page.url(); const id = orderUrl.split("/").at(-1)!;
@@ -67,7 +67,7 @@ test("Wise beta order locks its quote, confirms payment separately, and requires
 test("an unpublished plan accepts a quote request without inventing a price", async ({ page }, info) => {
   await page.goto("/hire?plan=lead&hours=1&url=https%3A%2F%2F8.8.8.8%2F");
   await page.getByLabel("Email for the report").fill(`quote-beta-${info.project.name}@example.com`);
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /I own this website/ }).check();
   await page.getByRole("button", { name: "Request 1-hour shift quote" }).click();
   await expect(page.getByRole("heading", { name: "Your order is waiting for a quote" })).toBeVisible();
   const url = page.url(); const id = url.split("/").at(-1)!;

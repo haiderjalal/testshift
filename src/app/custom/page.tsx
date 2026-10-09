@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { SiteHeader } from "@/components/SiteHeader";
+import { testingMode } from "@/lib/repository-testing";
 
 import { CustomForm } from "./CustomForm";
 
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
   alternates: { canonical: "/custom" },
 };
 
-export default function CustomPage() {
+export default async function CustomPage({ searchParams }: PageProps<"/custom">) {
+  const mode = testingMode((await searchParams).mode);
   return (
     <>
       <SiteHeader />
@@ -23,7 +25,7 @@ export default function CustomPage() {
           Volume hours, recurring regression shifts, several sites or a dedicated agent team. Describe it and we&apos;ll
           reply with a quote.
         </p>
-        <CustomForm />
+        <CustomForm defaultMode={mode} />
       </main>
     </>
   );

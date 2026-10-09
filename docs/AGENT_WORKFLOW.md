@@ -104,3 +104,9 @@ Before broad commercial release, build a versioned golden corpus with healthy an
 Track confirmed-defect recall, false-positive rate, blocked rate, coverage by risk/dimension, flaky reproduction rate, time to first meaningful defect, script-only execution ratio, model calls, cost per confirmed defect and cost per shift. Repeat across seeds, models and plan levels; compare identical fixtures and budgets. No blanket cost-saving percentage is established by a single sample.
 
 Additional launch work: scoped credential roles; request-level mutation allowlists and submission limits; durable budget reservations; true multi-worker Postgres contention/kill/restart tests; hosted load/soak tests with explicit limits; Stripe and Resend sandbox verification; retention/revocation of report links; customer policy for unused time/refunds. These are not silently claimed as implemented.
+
+## Repository CI integration
+
+Repository testing is a separate path from the public-URL AI browser worker above. Customers sign in with GitHub and connect a repository they administer. The downloadable action executes their reviewed test commands in GitHub-hosted disposable runners; no TestShift control-plane credentials are given to repository code. The GitHub App verifies completed workflow metadata and publishes checks through the separate `github:worker` process.
+
+Configured source-level unit/integration tests, builds and E2E suites can run on pushes and pull requests. Destructive categories require an explicit reviewed disposable profile. This path does not generate missing source tests with AI or provision arbitrary application stacks. See [GitHub setup and operational limits](GITHUB_TESTING.md) and [the action guide](../github-action/README.md).

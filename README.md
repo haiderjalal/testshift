@@ -4,6 +4,8 @@ Rent four AI QA agents by the hour. Customers paste a URL and book a free 20-min
 
 Full product context: [docs/PRODUCT_CONTEXT.md](docs/PRODUCT_CONTEXT.md). Plan and roadmap: [docs/PLAN.md](docs/PLAN.md).
 
+Repository access, destructive testing and CI: [GitHub testing setup](docs/GITHUB_TESTING.md). `/repositories` supports GitHub App sign-in, verified connections and private CI reports. Customers download a workflow/action bundle for GitHub-hosted execution. Configure the App, apply the reviewed migration and run `npm run github:worker` to activate reporting. This repository also has a [QA workflow](.github/workflows/qa.yml).
+
 Current hardening results and release limitations: [QA audit](docs/QA_AUDIT.md). Detailed test-generation/execution workflow and cost controls: [Agent workflow](docs/AGENT_WORKFLOW.md).
 
 Current beta billing: [Wise onboarding and 10× hourly pricing](docs/BETA_BILLING.md). Stripe is parked. Paid orders require manual payment confirmation and a separate admin start.

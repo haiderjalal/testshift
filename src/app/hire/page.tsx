@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { SiteHeader } from "@/components/SiteHeader";
 import { loadBetaPrices } from "@/lib/beta-orders";
@@ -31,6 +32,7 @@ export default async function HirePage({ searchParams }: PageProps<"/hire">) {
         <p className="mt-3 text-graphite">
           Your first {TRIAL_MINUTES} minutes are free. Paid beta shifts are prepaid through Wise after email onboarding. No subscription or automatic card charges.
         </p>
+        <p className="mt-4 text-sm text-graphite">Have source code or need checks on every push? <Link href="/github-agent" className="text-ink underline underline-offset-4">Explore GitHub testing and CI</Link>.</p>
         <HireForm
           prices={prices}
           defaultUrl={typeof url === "string" ? url : ""}

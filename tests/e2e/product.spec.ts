@@ -26,7 +26,7 @@ test("booking validation preserves input and requires plan, consent and valid em
 test("server refuses private URLs and embedded credentials", async ({ page }) => {
   await page.goto("/hire?plan=junior");
   await page.getByLabel("Email for the report").fill("qa@example.com");
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /I own this website/ }).check();
   for (const url of ["http://127.0.0.1/", "http://2130706433/", "http://[::1]/", "http://169.254.169.254/"]) {
     await page.getByLabel("Website to test").fill(url);
     await page.getByRole("button", { name: "Start free 20-minute shift" }).click();
@@ -51,13 +51,13 @@ test("trial booking creates a queued run and duplicate site is rejected", async 
   const target = info.project.name === "mobile" ? "https://1.1.1.1/" : "https://8.8.4.4/";
   await page.goto(`/hire?plan=junior&url=${encodeURIComponent(target)}`);
   await page.getByLabel("Email for the report").fill(`qa-${info.project.name}@example.com`);
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /I own this website/ }).check();
   await page.getByRole("button", { name: "Start free 20-minute shift" }).click();
   await expect(page).toHaveURL(/\/runs\/[\da-f-]+$/);
   await expect(page.getByText("Your agents are clocking in…")).toBeVisible();
   await page.goto(`/hire?plan=junior&url=${encodeURIComponent(target)}`);
   await page.getByLabel("Email for the report").fill(`another-${info.project.name}@example.com`);
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /I own this website/ }).check();
   await page.getByRole("button", { name: "Start free 20-minute shift" }).click();
   await expect(page.locator("#hours-error")).toContainText(/already/);
 });
@@ -119,7 +119,7 @@ test("cross-origin admin actions cannot establish a session", async ({ page, con
   await page.getByLabel("Password", { exact: true }).fill("test-only-password-12345");
   const response = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/admin/login"));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  expect((await response).status()).toBe(500);
+  expect((await response).status()).toBe(403);
   expect((await context.cookies()).some((c) => c.name === "ts_admin")).toBe(false);
   await page.unroute("**/admin/login");
   await page.goto("/admin");

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { databaseTls } from "./security";
 
 import type { AgentId } from "./agents";
 import type { PlanId } from "./plans";
@@ -13,7 +14,8 @@ export function db(): postgres.Sql {
   const max = Number(process.env.DATABASE_POOL_SIZE ?? 5);
   if (!Number.isInteger(max) || max < 1 || max > 20) throw new Error("Invalid DATABASE_POOL_SIZE");
   try {
-    cache.sql = postgres(url, { prepare: false, max, connect_timeout: 10, idle_timeout: 20, connection: { statement_timeout: 15_000 } });
+    const ssl = databaseTls(url, process.env.NODE_ENV === "production");
+    cache.sql = postgres(url, { ...(ssl === undefined ? {} : { ssl }), prepare: false, max, connect_timeout: 10, idle_timeout: 20, connection: { statement_timeout: 15_000 } });
   } catch (e) {
     // postgres.js decodes the password; a raw "%" or similar in it throws an opaque URIError.
     if (e instanceof URIError) throw new Error("DATABASE_URL is malformed: URL-encode special characters in the password (% → %25).");

@@ -1,0 +1,18 @@
+name: TestShift repository QA
+description: Run a reviewed test configuration in an ephemeral GitHub-hosted runner and record coverage gaps.
+inputs:
+  config:
+    description: Path to a reviewed TestShift JSON configuration in the checked-out repository
+    default: testshift.config.json
+  destructive:
+    description: Explicitly enable configured destructive checks against disposable resources
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Execute reviewed suite
+      shell: bash
+      env:
+        TESTSHIFT_CONFIG: ${{ inputs.config }}
+        TESTSHIFT_DESTRUCTIVE: ${{ inputs.destructive }}
+      run: node "$GITHUB_ACTION_PATH/runner.mjs"

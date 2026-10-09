@@ -4,7 +4,7 @@ import { db } from "./db";
 import { errorMessage, log } from "./log";
 
 // Parked for a future release. A leftover API key must not activate checkout during the beta.
-export const stripe = process.env.STRIPE_ENABLED === "1" && process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+export const stripe = process.env.STRIPE_ENABLED === "1" && process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { timeout: 10_000, maxNetworkRetries: 0 }) : null;
 
 export const appUrl = (): string => process.env.APP_URL ?? "http://localhost:3000";
 
