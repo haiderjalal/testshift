@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { db } from "@/lib/db";
 import { authorizedRepository, githubConfigured, userInstallations } from "@/lib/github/api";
 import { customerSession, customerToken } from "@/lib/github/session";
+import { generationEnabled } from "@/lib/github/generation-store";
 import { ConnectForm } from "./ConnectForm";
 import { disconnectRepository, signOutRepository } from "./actions";
 
@@ -17,6 +18,7 @@ interface Connection { id: string; installation_id: string; repository_id: strin
 export default async function RepositoriesPage({ searchParams }: PageProps<"/repositories">) {
   const notice = (await searchParams).notice;
   const configured = githubConfigured();
+  const generation = generationEnabled();
   const customer = configured ? await customerSession() : null;
   let installations: { id: number; account: string }[] = []; const connections: Connection[] = []; let unavailable = false;
   if (customer) {
@@ -37,7 +39,7 @@ export default async function RepositoriesPage({ searchParams }: PageProps<"/rep
     <h1 className="font-display text-4xl font-semibold">Your GitHub repositories</h1>
     <p className="mt-4 text-graphite">Connect repositories you administer. GitHub Actions runs your approved tests; TestShift collects verified CI results and publishes a check on the tested commit.</p>
     <section className="mt-6 rounded-2xl border border-rule p-6"><h2 className="font-display text-xl">How testing and payment work</h2>
-      <p className="mt-3 text-sm text-graphite">Choose an existing test workflow by name. When it runs in GitHub, TestShift verifies the result and shows a report here. If your repository has no workflow, start with the downloadable template and add your test commands.</p>
+      <p className="mt-3 text-sm text-graphite">{generation ? "Connect and approve source analysis to generate a test pull request. Review its assertions and CI results, then merge it to run the suite on future pushes and pull requests. New pushes run the tests; they do not automatically regenerate them." : "Choose an existing test workflow by name. When it runs in GitHub, TestShift verifies the result and shows a report here. AI test generation requires the owner to enable it first."}</p>
       <p className="mt-3 text-sm text-graphite">No TestShift payment is collected when connecting a repository or reporting its CI results. GitHub Actions usage follows <a href="https://docs.github.com/en/billing/concepts/product-billing/github-actions" className="underline">GitHub&apos;s billing</a>. Paid AI website-testing shifts are booked separately through <Link href="/hire" className="underline">Book website testing</Link>.</p>
     </section>
     {typeof notice === "string" && notices[notice] && <p role="status" className="mt-5 rounded-xl border border-rule p-4">{notices[notice]}</p>}
@@ -45,11 +47,20 @@ export default async function RepositoriesPage({ searchParams }: PageProps<"/rep
       : !customer ? <a href="/api/github/auth" className="btn-primary mt-8 inline-flex min-h-12 px-6">Sign in with GitHub</a>
         : <><div className="mt-6 flex flex-wrap items-center gap-5"><p>Signed in as <strong>{customer.login}</strong></p><form action={signOutRepository}><button className="underline">Sign out</button></form><a href="/api/github/install" className="btn-primary min-h-12 px-5">Install GitHub App</a></div>
           {unavailable && <p role="alert" className="mt-5">Some GitHub access could not be verified. Private results are hidden. Reauthorize GitHub to refresh access.</p>}
-          <section className="mt-8 rounded-2xl border border-rule bg-card p-7"><h2 className="font-display text-2xl">Connect a selected repository</h2><p className="mt-3 text-sm text-graphite">Install the App first. Only repositories available to your GitHub account and installation can be connected, and GitHub must confirm that you are a repository administrator.</p><ConnectForm installations={installations} /></section>
+          <section className="mt-8 rounded-2xl border border-rule bg-card p-7"><h2 className="font-display text-2xl">Connect a selected repository</h2><p className="mt-3 text-sm text-graphite">Install the App first. Only repositories available to your GitHub account and installation can be connected, and GitHub must confirm that you are a repository administrator.</p><ConnectForm installations={installations} generation={generation} /></section>
           <section className="mt-10 space-y-5"><h2 className="font-display text-2xl">Connected repositories</h2>{!connections.length && <p className="text-graphite">No verified repositories connected yet.</p>}
             {await Promise.all(connections.map(async (connection) => {
               const jobs = await db()`select id,workflow_run_id::text,run_attempt,head_sha,status,conclusion,created_at from github_jobs where connection_id = ${connection.id} order by created_at desc limit 10`;
+              const generationResult = generation ? await db()`select id,status,stage,pull_number::text,failure_code,inventory from github_generations where connection_id = ${connection.id} order by created_at desc limit 3`.catch(()=>null) : [];
+              const generations = generationResult ?? [];
               return <article key={connection.id} className="rounded-2xl border border-rule bg-card p-6"><h3 className="break-words font-display text-xl">{connection.full_name}</h3><p className="mt-2 text-sm break-words">{connection.active ? "Connected" : "Paused — reconnect to resume"} · {connection.workflow_path}</p>
+                {generationResult === null && <p className="mt-4 text-sm" role="alert">Test generation is unavailable. The owner should check the generation migration and worker setup. Existing CI reports remain available below.</p>}
+                {generations.map((item) => <div key={item.id} className="mt-4 rounded-xl border border-rule p-4"><p>Test generation: {item.status} · {item.stage}</p>
+                  {item.inventory && <p className="mt-2 text-sm text-graphite">Analyzed {item.inventory.analyzedFiles} of {item.inventory.totalFiles} files. See the PR for scope and coverage gaps.</p>}
+                  {item.pull_number && <a className="mt-2 inline-block underline" href={`https://github.com/${connection.full_name}/pull/${item.pull_number}`}>Review generated tests in GitHub</a>}
+                  {item.failure_code && <p className="mt-2 text-sm">Setup needs attention: {item.failure_code}. Check the App permissions and worker configuration, or request assisted setup for unsupported stacks.</p>}
+                  {['queued','processing'].includes(item.status) && <p className="mt-2 text-sm text-graphite">Refresh this page to see progress.</p>}
+                </div>)}
                 <ul className="mt-4 space-y-3">{jobs.map((job) => <li key={`${job.workflow_run_id}-${job.run_attempt}`} className="text-sm"><Link className="underline" href={`/repositories/jobs/${job.id}`}>Commit {job.head_sha.slice(0, 8)} · attempt {job.run_attempt}</Link><span> · {job.status}{job.conclusion ? ` · ${job.conclusion}` : ""}</span></li>)}</ul>
                 {!jobs.length && <p className="mt-4 text-sm text-graphite">Waiting for a new completed run of your selected workflow. Start it in GitHub Actions, or push a commit if it runs on pushes.</p>}
                 <form action={disconnectRepository} className="mt-5"><input type="hidden" name="id" value={connection.id} /><button className="text-sm underline">Disconnect and delete TestShift reports</button></form></article>;

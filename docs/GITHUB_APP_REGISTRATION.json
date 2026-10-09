@@ -1,7 +1,8 @@
 {
   "owner": "haiderjalal",
   "registration_url": "https://github.com/settings/apps/new",
-  "proposed_name": "Haider Jalal TestShift QA",
+  "registered_name": "testshiftqa",
+  "app_id": 5247808,
   "homepage_url": "https://testshift.musme.co",
   "callback_url": "https://testshift.musme.co/api/github/callback",
   "setup_url": "https://testshift.musme.co/api/github/setup",
@@ -11,9 +12,11 @@
   "expire_user_authorization_tokens": true,
   "repository_permissions": {
     "metadata": "read",
-    "contents": "read",
+    "contents": "write",
     "actions": "read",
-    "checks": "write"
+    "checks": "write",
+    "pull_requests": "write",
+    "workflows": "write"
   },
   "subscribe_to": ["workflow_run"],
   "lifecycle_events_handled": ["installation", "installation_repositories", "github_app_authorization"],

@@ -36,7 +36,7 @@ async function main() {
       APP_URL: "http://127.0.0.1:3107", ADMIN_PASSWORD: "test-only-password-12345", STRIPE_ENABLED: "0", STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "",
       RESEND_API_KEY: "", OWNER_EMAIL: "", ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", MAX_TRIALS_PER_DAY: "10",
       TRUST_PROXY_HEADERS: "1", VERCEL: "0", GITHUB_APP_ID: "900", GITHUB_APP_SLUG: "fixture-testshift", GITHUB_CLIENT_ID: "fixture-client",
-      GITHUB_CLIENT_SECRET: "fixture-client-secret", GITHUB_APP_PRIVATE_KEY: fixtureKey,
+      GITHUB_CLIENT_SECRET: "fixture-client-secret", GITHUB_APP_PRIVATE_KEY: fixtureKey, GITHUB_GENERATION_ENABLED: "1",
       GITHUB_WEBHOOK_SECRET: "fixture-webhook-secret-with-32-characters", GITHUB_TOKEN_ENCRYPTION_KEY: process.env.GITHUB_TOKEN_ENCRYPTION_KEY },
   });
   let closing = false;

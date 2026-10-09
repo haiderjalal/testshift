@@ -19,6 +19,7 @@ test("private repository reports require the matching customer and current GitHu
 });
 test("connection cannot bind another installation or a repository without administration", async ({ page, context }) => {
   await context.addCookies([session(902)]); await page.goto("/repositories");
+  await page.getByText("Use an existing test workflow instead", {exact:true}).click();
   await page.getByLabel("GitHub installation").selectOption("906");
   await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
   await page.getByRole("button", { name: "Find workflows", exact: true }).click();
@@ -27,6 +28,7 @@ test("connection cannot bind another installation or a repository without admini
 });
 test("repository administrator can connect and sign out without exposing the user token", async ({ page, context }, info) => {
   await context.addCookies([session(info.project.name === "mobile" ? 904 : 903)]); await page.goto("/repositories");
+  await page.getByText("Use an existing test workflow instead", {exact:true}).click();
   await page.getByLabel("GitHub installation").selectOption("905"); await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
   await expect(page.getByLabel("Workflow path")).toHaveCount(0);
   await page.getByRole("button", { name: "Find workflows", exact: true }).click();
@@ -43,6 +45,7 @@ test("repository administrator can connect and sign out without exposing the use
 
 test("repositories without workflows offer setup guidance and changing repositories invalidates discovery", async ({ page, context }) => {
   await context.addCookies([session(901)]); await page.goto("/repositories");
+  await page.getByText("Use an existing test workflow instead", {exact:true}).click();
   await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/empty-project");
   await page.getByRole("button", { name: "Find workflows", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("No active workflows");
@@ -59,6 +62,7 @@ test("repositories without workflows offer setup guidance and changing repositor
 
 test("forged workflow choices are rejected when connecting a repository", async ({ page, context }) => {
   await context.addCookies([session(901)]); await page.goto("/repositories");
+  await page.getByText("Use an existing test workflow instead", {exact:true}).click();
   await page.getByLabel("Repository URL").fill("https://github.com/fixture-owner/project");
   await page.getByRole("button", { name: "Find workflows", exact: true }).click();
   await expect(page.getByLabel("Test workflow")).toHaveValue("911");
@@ -67,6 +71,29 @@ test("forged workflow choices are rejected when connecting a repository", async 
   await page.getByRole("checkbox", { name: /I administer this repository/ }).check();
   await page.getByRole("button", { name: "Connect repository", exact: true }).click();
   await expect(page.locator("form").getByRole("alert")).toContainText("Could not verify");
+});
+test("administrator can queue AI testing without knowing a workflow path", async ({page,context},info) => {
+  await context.addCookies([session(901)]);await page.goto('/repositories');
+  await expect(page.getByLabel('Workflow path')).toHaveCount(0);
+  await page.getByLabel('Repository to analyze').fill('https://github.com/fixture-owner/empty-project');
+  await page.locator('input[name="sourceConsent"]').evaluate(element=>element.removeAttribute('required'));
+  await page.getByRole('button',{name:'Connect and generate tests',exact:true}).click();
+  await expect(page.locator('input[name="sourceConsent"]')).not.toBeChecked();
+  await expect(page.locator('form').getByRole('alert')).toContainText('approve source analysis');
+  await page.getByRole('checkbox',{name:/I authorize AI source analysis/}).check();
+  await page.getByRole('button',{name:'Connect and generate tests',exact:true}).click();
+  await expect(page.locator('form').getByRole('status')).toContainText('generation queued');
+  await page.reload();await expect(page.getByText('Test generation: queued',{exact:false})).toBeVisible();
+  expect(await page.content()).not.toContain('fixture-scoped-generation-token');
+  await page.locator('section').filter({has:page.getByRole('heading',{name:'Connect a selected repository',exact:true})}).screenshot({path:info.outputPath('generate-tests.png')});
+});
+test("AI generation refuses a repository outside the customer's installation", async ({page,context}) => {
+  await context.addCookies([session(902)]);await page.goto('/repositories');
+  await page.getByLabel('Repository to analyze').fill('https://github.com/fixture-owner/empty-project');
+  await page.getByRole('checkbox',{name:/I authorize AI source analysis/}).check();
+  await page.getByRole('button',{name:'Connect and generate tests',exact:true}).click();
+  await expect(page.locator('form').getByRole('alert')).toContainText('Could not queue generation');
+  await expect(page.getByText('fixture-owner/empty-project',{exact:true})).toHaveCount(0);
 });
 test("GitHub webhook rejects forgery and accepts a signed idempotent delivery", async ({ request }) => {
   const body = JSON.stringify({ zen: "Disposable fixture" }); const delivery = randomUUID();

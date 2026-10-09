@@ -4,6 +4,8 @@ globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   if (url.hostname !== "api.github.com") return originalFetch(input, init);
   const token = new Headers(init?.headers).get("Authorization");
+  if (url.pathname === "/app/installations/905/access_tokens") return Response.json({ token: "fixture-scoped-generation-token" });
+  if (url.pathname === "/installation/token" && init?.method === "DELETE") return new Response(null, { status: 204 });
   const owner = token === "Bearer fixture-customer-token-901";
   const installations = [{ id: owner ? 905 : 906, app_id: 900, suspended_at: null, account: { login: owner ? "fixture-owner" : "fixture-other" } }];
   if (url.pathname === "/user/installations") return Response.json({ installations });

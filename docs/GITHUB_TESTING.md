@@ -13,7 +13,7 @@ The integration is implemented locally. It needs an owner-registered GitHub App,
 7. The separate reporting worker verifies the workflow run and jobs against GitHub's REST API, checks the owner's current administrator permission, publishes a `TestShift QA` check, and stores a private report. Individual assertion counts are not inferred from command/job success. Full runner evidence remains in GitHub Actions.
 8. Customers view their reports on `/repositories` and `/repositories/jobs/[id]`. Both ownership and current GitHub authority are checked before private data is displayed. Disconnecting removes TestShift connections and reports; remove the workflow separately to stop GitHub CI.
 
-The existing public-URL AI browser worker remains independent. This integration executes reviewed repository commands. It does not yet generate new source tests with AI, clone private repositories onto the website host or provision arbitrary application stacks. Installing an App alone cannot create missing tests or guarantee full coverage.
+The existing public-URL AI browser worker remains independent. Repository monitoring works without AI generation. The optional source-based generator is described in [REPOSITORY_GENERATION.md](REPOSITORY_GENERATION.md): it proposes Vitest and Playwright tests with CI in a reviewable pull request. It does not clone or execute customer projects on the website/worker host or provision arbitrary application stacks. Installing an App alone cannot guarantee full coverage.
 
 ## Payment behavior
 
@@ -32,13 +32,13 @@ Set production `APP_URL=https://testshift.musme.co`. The callback is `https://te
 | Setup URL | `APP_URL/api/github/setup` |
 | Webhook URL | `APP_URL/api/github/webhook` |
 | Webhook content type | JSON |
-| Repository permissions | Metadata read, Contents read, Actions read, Checks write |
+| Repository permissions | Monitoring: Metadata read, Contents read, Actions read, Checks write. Generation additionally requires Contents write, Pull requests write and Workflows write. |
 | Events | Workflow run, Installation, Installation repositories, GitHub App authorization |
 | Request OAuth authorization during installation | Leave unchecked; TestShift explicitly initiates sign-in with PKCE |
 | User token expiration | Enabled |
 | Installation selection | Selected repositories recommended |
 
-Installation lifecycle and authorization events are provided according to GitHub's App event rules. Do not request Contents write, Actions write, Administration write or Workflows write for this implementation. It reads existing runs and publishes checks; workflow installation is reviewed and committed by the repository administrator.
+Installation lifecycle and authorization events are provided according to GitHub's App event rules. For generation, upgrade Contents to write and add Pull requests write and Workflows write; existing installations must approve that permission update. Actions write and Administration write are unnecessary. Monitoring tokens remain read-only except for Checks write; generation publication uses a separate one-repository write token and never updates the default branch directly.
 
 Set the server-only variables documented in `.env.example`: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` and `GITHUB_TOKEN_ENCRYPTION_KEY`. Use an independently generated webhook secret of at least 32 characters and a separate canonical base64 encoding of 32 random bytes for the token encryption key. The PEM key supports literal newline escapes. Keep these in the deployment secret store; the website never requests customers' passwords or personal tokens.
 

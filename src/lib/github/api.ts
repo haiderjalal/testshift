@@ -67,6 +67,16 @@ export async function withInstallation<T>(installationId: number, repositoryId: 
   try { return await work(token); }
   finally { await github("/installation/token", token, "DELETE").catch(() => undefined); }
 }
+/** Separate write token, scoped to one explicitly approved repository, only for test PR publication. */
+export async function withGenerationInstallation<T>(installationId: number, repositoryId: number, work: (token: string) => Promise<T>): Promise<T> {
+  githubId.parse(installationId); githubId.parse(repositoryId);
+  const result = await github<{ token: string }>(`/app/installations/${installationId}/access_tokens`, appJwt(), "POST", {
+    repository_ids: [repositoryId], permissions: { contents: "write", pull_requests: "write", workflows: "write" },
+  });
+  const token = z.string().min(10).max(1000).parse(result.token);
+  try { return await work(token); }
+  finally { await github("/installation/token", token, "DELETE").catch(() => undefined); }
+}
 export const repositorySchema = z.object({ id: githubId, full_name: repoName, permissions: z.object({ admin: z.boolean() }).optional() });
 export const installationSchema = z.object({ id: githubId, app_id: githubId, suspended_at: z.string().nullable(), account: z.object({ login: z.string().max(100) }) });
 export async function userInstallations(token: string) {
