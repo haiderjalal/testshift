@@ -26,10 +26,23 @@ export const LATENCY_BUDGET_MS = 2_000;
 const ajv = new Ajv({ strict: false, allErrors: false });
 const compiled = new WeakMap<JsonObject, ReturnType<typeof ajv.compile>>();
 
+/** Strips regex-driven keywords from a site-supplied schema: `pattern` and `patternProperties` can be a ReDoS
+ * that blocks the worker's event loop. Everything else is still validated. */
+function stripRegexKeywords(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripRegexKeywords);
+  if (typeof value !== "object" || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "pattern" || key === "patternProperties") continue;
+    out[key] = stripRegexKeywords(child);
+  }
+  return out;
+}
+
 function validatorFor(schema: JsonObject): ReturnType<typeof ajv.compile> {
   const cached = compiled.get(schema);
   if (cached) return cached;
-  const validate = ajv.compile(schema);
+  const validate = ajv.compile(stripRegexKeywords(schema) as JsonObject);
   compiled.set(schema, validate);
   return validate;
 }

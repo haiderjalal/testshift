@@ -22,9 +22,30 @@ export function parseSpecText(text: string): unknown {
   }
 }
 
-/** Returns an OpenAPI 3 document, converting Swagger 2 when needed. Null when the input is neither. */
+/** Above this many nodes a spec is refused unwalked. YAML aliases let a tiny file expand to billions of nodes
+ * (a "billion laughs" bomb); counting visits without de-duplication bounds our own walk and rejects the bomb. */
+export const MAX_SPEC_NODES = 200_000;
+
+/** Counts nodes by walking without de-duplication, bailing as soon as the budget is passed. */
+export function withinNodeBudget(value: unknown, budget = MAX_SPEC_NODES): boolean {
+  const stack: unknown[] = [value];
+  let seen = 0;
+  while (stack.length > 0) {
+    if (++seen > budget) return false;
+    const node = stack.pop();
+    if (Array.isArray(node)) {
+      for (const item of node) stack.push(item);
+    } else if (isObject(node)) {
+      for (const key in node) stack.push(node[key]);
+    }
+  }
+  return true;
+}
+
+/** Returns an OpenAPI 3 document, converting Swagger 2 when needed. Null when the input is neither or too large. */
 export function normalizeSpec(doc: unknown): JsonObject | null {
   if (!isObject(doc) || !isObject(doc.paths)) return null;
+  if (!withinNodeBudget(doc)) return null;
   if (typeof doc.openapi === "string" && /^3\./.test(doc.openapi)) return doc;
   if (doc.swagger === "2.0") return swagger2ToOpenApi(doc);
   return null;

@@ -3,6 +3,7 @@ import type { Browser } from "playwright";
 import { agentWindows, type Agent, type AgentId } from "@/lib/agents";
 import { judgeCompatibility, type CompatibilityResult, type EngineId } from "@/lib/compat";
 import { isSiteVerified } from "@/lib/ownership";
+import { emailKey } from "@/lib/net";
 import { db, json, type Run, type Severity, type SitePage, type Strategy, type TestCase } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
 import { errorMessage, log } from "@/lib/log";
@@ -405,6 +406,7 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
         urls,
         viewports,
         until,
+        emailKey: emailKey(run.email),
         store: configuredImageStore(),
         withLease: (write) => withRunLease(run.id, lease.token, write),
       });
@@ -419,7 +421,7 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
   if (checks.performance) {
     await setActivity(run.id, agent.id, `${agent.name} · Light load test`);
     try {
-      const load = await runLoadCheck(run.url, until);
+      const load = await runLoadCheck(run.url, until, emailKey(run.email));
       // Without an approved, verified environment the load test does not apply, so it is not a coverage gap.
       if (load.passed !== null) drafts.push(loadCheckCase(load));
       await withRunLease(run.id, lease.token, async (sql) => {
@@ -434,7 +436,7 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
     drafts.push(securityCase(audits[0]));
     // Isolated: a failure in the extended checks must not cost the release checks above.
     try {
-      const verified = await isSiteVerified(new URL(run.url).hostname);
+      const verified = await isSiteVerified(new URL(run.url).hostname, emailKey(run.email));
       const checked = await securityChecks({ siteUrl: run.url, pageHeaders: audits[0].headers, verified, until });
       // Active probes waiting on domain verification are shown on the report's ownership panel, not as gaps.
       drafts.push(...checked.filter((c) => c.actual !== BLOCKED_NEEDS_OWNERSHIP).map((c) => securityCheckCase(c, run.url)));
@@ -519,7 +521,7 @@ async function runApiPhase(run: Run, stopAt: number): Promise<void> {
   await setActivity(run.id, "staging", "Staging agent · API checks");
   const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
   // Writes need an approved test environment and a verified domain. The gate is checked here, not assumed.
-  const writeGate = await checkTestEnvironment(run.url, "writes");
+  const writeGate = await checkTestEnvironment(run.url, "writes", emailKey(run.email));
   const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until, run.api_collection ?? [], { writesEnabled: writeGate.ok });
   await withRunLease(run.id, lease.token, async (sql) => {
     await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null} where id = ${run.id}`;

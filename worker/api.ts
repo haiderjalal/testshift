@@ -236,7 +236,13 @@ function dedupe(operations: ApiOperation[]): ApiOperation[] {
  * never as a pass, and records left behind are reported.
  */
 export async function runApiChecks(origin: URL, until: number, collection: PostmanEndpoint[] = [], options: ApiRunOptions = { writesEnabled: false }): Promise<ApiRunResult> {
-  const transport = options.transport ?? liveTransport;
+  // One guard for every caller: a spec server, a path like "//evil.com/x" or an absolute key can resolve off the
+  // booked origin, so we refuse anything that does. Testing stays on the customer's own site.
+  const base = options.transport ?? liveTransport;
+  const transport: Transport = (url, init) => {
+    if (url.origin !== origin.origin) return Promise.reject(new Error("Off-origin request refused"));
+    return base(url, init);
+  };
   const found = await discoverSpec(origin, until, transport);
   const operations = dedupe([...(found ? listOperations(found.spec, origin) : []), ...collection.map(collectionOperation)]);
   if (operations.length === 0) return { specUrl: found?.url ?? null, rows: [], latency: null };

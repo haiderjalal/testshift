@@ -11,7 +11,7 @@ export type EnvironmentCheck =
   | { ok: true; maxRequests: number; maxRps: number; maxConcurrency: number }
   | { ok: false; reason: string };
 
-export async function checkTestEnvironment(siteUrl: string, capability: EnvironmentCapability): Promise<EnvironmentCheck> {
+export async function checkTestEnvironment(siteUrl: string, capability: EnvironmentCapability, emailKey: string): Promise<EnvironmentCheck> {
   const host = new URL(siteUrl).hostname;
   const [environment] = await db()<{
     load_allowed: boolean;
@@ -29,7 +29,7 @@ export async function checkTestEnvironment(siteUrl: string, capability: Environm
   if (!allowed) {
     return { ok: false, reason: capability === "load" ? "This site's test environment is not approved for load tests." : "Changes data. This site's test environment is not approved for write tests." };
   }
-  if (!(await isSiteVerified(host))) {
+  if (!(await isSiteVerified(host, emailKey))) {
     return { ok: false, reason: "Verify domain ownership before this test can run." };
   }
   return { ok: true, maxRequests: environment.max_requests, maxRps: environment.max_rps, maxConcurrency: environment.max_concurrency };

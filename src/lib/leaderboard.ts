@@ -29,11 +29,16 @@ export function rankEntries(entries: Unranked[]): LeaderboardEntry[] {
  * Only the name, address and totals are public: bug details stay on the private report.
  */
 export async function loadLeaderboard(): Promise<LeaderboardEntry[]> {
+  // Pick each site's latest completed shift FIRST, then keep it only if that latest shift opted in. Filtering
+  // before the "latest" pick would keep a site listed from an old opted-in run after a newer run opted out.
   const runs = await db()<{ id: string; url: string; company_name: string | null; strategy: Strategy | null; completed_at: Date }[]>`
-    select distinct on (leaderboard_site) id, url, company_name, strategy, completed_at
-    from runs
-    where leaderboard_opt_in and status = 'completed' and leaderboard_site is not null
-    order by leaderboard_site, completed_at desc`;
+    select id, url, company_name, strategy, completed_at from (
+      select distinct on (leaderboard_site) id, url, company_name, strategy, completed_at, leaderboard_opt_in
+      from runs
+      where status = 'completed' and leaderboard_site is not null
+      order by leaderboard_site, completed_at desc
+    ) latest
+    where leaderboard_opt_in`;
   if (!runs.length) return [];
 
   const cases = await db()<(ScoredCase & { run_id: string })[]>`
