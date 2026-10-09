@@ -73,17 +73,23 @@ test("server rejects a forged booking plan instead of trusting client controls",
 
 test("malformed serialized actions return a generic failure with a request ID", async ({ page, context }) => {
   await page.goto("/custom");
+  let responseBody: string | undefined;
   await page.route("**/custom", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
     const headers = { ...await route.request().allHeaders(), "content-type": "text/plain" };
     delete (headers as Record<string, string>)["content-length"];
-    await route.fulfill({ response: await context.request.fetch(route.request(), { headers, data: "{malformed-security-fixture", maxRedirects: 0 }) });
+    const response = await context.request.fetch(route.request(), { headers, data: "{malformed-security-fixture", maxRedirects: 0 });
+    // Buffer the API response before the browser receives it and may navigate away.
+    responseBody = await response.text();
+    await route.fulfill({ response, body: responseBody });
   });
   const waiting = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/custom"));
   await page.getByRole("button", { name: "Request a quote" }).click();
   const response = await waiting;
   expect(response.status()).toBe(500);
   expect(response.headers()["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
-  expect(await response.text()).not.toContain("malformed-security-fixture");
+  expect(responseBody).toBeDefined();
+  expect(responseBody).not.toContain("malformed-security-fixture");
 });
 
 test("stored customer markup renders as text in the authenticated dashboard", async ({ page, context }, info) => {

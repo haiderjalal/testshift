@@ -97,15 +97,35 @@ export async function sweepGitHubJobs() {
   await db()`delete from github_deliveries where received_at < now() - interval '30 days'`;
   await db()`delete from github_sessions where expires_at < now()`;
   await db()`delete from github_states where expires_at < now()`;
+  const { generationEnabled } = await import("../src/lib/github/generation-store");
+  if (generationEnabled()) {
+    try {
+      await db()`update github_generations set status = 'blocked', failure_code = 'generation-access-revoked', lease_id = null, lease_until = null, completed_at = now()
+        where status in ('queued','processing') and connection_id in (select id from github_connections where not active)`;
+      await db()`update github_generations set status = 'failed', failure_code = 'retry-limit', lease_id = null, lease_until = null, completed_at = now()
+        where status = 'processing' and lease_until < now() and attempts >= 5`;
+      await db()`update github_generations set artifact = null where status in ('review_ready','failed','blocked') and completed_at < now() - interval '7 days'`;
+      await db()`delete from github_generations where created_at < now() - interval '30 days'`;
+      await db()`delete from github_generation_daily where day < current_date - 30`;
+      await db()`delete from github_generation_reservations where created_at < now() - interval '30 days'`;
+    } catch { log("error", "Repository generation maintenance unavailable; check migration"); }
+  }
 }
 export async function runGitHubWorker() {
   if (!githubConfigured()) throw new Error("GitHub integration is not configured");
+  const { generationEnabled, generationWorkerConfigured } = await import("../src/lib/github/generation-store");
+  if (generationEnabled() && !generationWorkerConfigured()) log("error", "Repository generation requires ANTHROPIC_API_KEY in the GitHub worker");
   let stopping = false; process.once("SIGTERM", () => { stopping = true; }); process.once("SIGINT", () => { stopping = true; });
   let lastSweep = 0;
   while (!stopping) {
     try {
       if (Date.now() - lastSweep > 60_000) { await sweepGitHubJobs(); lastSweep = Date.now(); }
-      if (!(await processGitHubJob())) await new Promise((resolve) => setTimeout(resolve, 2000));
+      const reporting = await processGitHubJob();
+      const { processRepositoryGeneration } = await import("./repository-generation");
+      let generating = false;
+      try { generating = await processRepositoryGeneration(); }
+      catch { log("error", "Repository generation unavailable; check migration and worker configuration"); }
+      if (!reporting && !generating) await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch { log("error", "GitHub worker unavailable"); await new Promise((resolve) => setTimeout(resolve, 5000)); }
   }
   await db().end();

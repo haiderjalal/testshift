@@ -6,6 +6,33 @@ import { appJwt } from "./crypto";
 export const githubId = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const repoName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/);
 export const workflowPath = z.string().regex(/^\.github\/workflows\/[A-Za-z0-9_-]{1,80}\.ya?ml$/);
+const workflowSchema = z.object({ id: githubId, name: z.string().min(1).max(300), path: z.string().max(300), state: z.string().max(80) });
+export interface WorkflowChoice { id: number; name: string }
+
+/** Call only after verifying the customer's installation access and repository administration. */
+export async function repositoryWorkflows(token: string, fullName: string): Promise<WorkflowChoice[]> {
+  repoName.parse(fullName);
+  const choices: WorkflowChoice[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const data = await github<{ workflows: unknown[] }>(`/repos/${fullName}/actions/workflows?per_page=100&page=${page}`, token);
+    const batch = z.array(workflowSchema).max(100).parse(data.workflows);
+    for (const item of batch) {
+      if (item.state === "active" && workflowPath.safeParse(item.path).success && !choices.some((choice) => choice.id === item.id)) {
+        choices.push({ id: item.id, name: item.name });
+      }
+    }
+    if (batch.length < 100) return choices;
+  }
+  throw new Error("Workflow listing limit exceeded");
+}
+
+/** Resolve the path from GitHub again at connection time; never trust a submitted path. */
+export async function activeRepositoryWorkflow(token: string, fullName: string, workflowId: number) {
+  repoName.parse(fullName); githubId.parse(workflowId);
+  const workflow = workflowSchema.parse(await github(`/repos/${fullName}/actions/workflows/${workflowId}`, token));
+  if (workflow.id !== workflowId || workflow.state !== "active" || !workflowPath.safeParse(workflow.path).success) throw new GitHubError(422);
+  return workflow;
+}
 export class GitHubError extends Error {
   constructor(public status: number) { super("GitHub request failed"); }
 }
@@ -37,6 +64,16 @@ export async function installationToken(installationId: number, repositoryId: nu
 }
 export async function withInstallation<T>(installationId: number, repositoryId: number, publish: boolean, work: (token: string) => Promise<T>): Promise<T> {
   const token = await installationToken(installationId, repositoryId, publish);
+  try { return await work(token); }
+  finally { await github("/installation/token", token, "DELETE").catch(() => undefined); }
+}
+/** Separate write token, scoped to one explicitly approved repository, only for test PR publication. */
+export async function withGenerationInstallation<T>(installationId: number, repositoryId: number, work: (token: string) => Promise<T>): Promise<T> {
+  githubId.parse(installationId); githubId.parse(repositoryId);
+  const result = await github<{ token: string }>(`/app/installations/${installationId}/access_tokens`, appJwt(), "POST", {
+    repository_ids: [repositoryId], permissions: { contents: "write", pull_requests: "write", workflows: "write" },
+  });
+  const token = z.string().min(10).max(1000).parse(result.token);
   try { return await work(token); }
   finally { await github("/installation/token", token, "DELETE").catch(() => undefined); }
 }

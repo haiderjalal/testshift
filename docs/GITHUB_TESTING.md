@@ -6,14 +6,18 @@ The integration is implemented locally. It needs an owner-registered GitHub App,
 
 1. Open `/repositories` and sign in with GitHub. OAuth uses a browser-bound, one-time state and PKCE. Short-lived user tokens are encrypted server-side and the browser receives only an opaque session cookie. Sessions last at most one hour; customers sign in again rather than retaining refresh tokens.
 2. Install the App on selected repositories. The installation return is state-bound and verified through GitHub's user-accessible installation API. A query parameter alone never establishes access.
-3. Choose the installation, repository URL and workflow path. TestShift requires current repository administrator permission and verifies the intersection of the user's and App installation's repository access. Each customer can connect up to 20 repositories.
-4. Download the starter ZIP. Extract it at the repository root, adapt the reviewed commands and fixtures in `testshift.config.json`, and commit all included files. The default workflow path is `.github/workflows/testshift.yml`.
+3. Choose the installation and paste the repository URL, then click **Find workflows**. TestShift verifies current repository administration and the intersection of the user's and App installation's repository access before listing active workflows. Select a workflow by its GitHub name; a sole workflow is selected automatically. There is no path to type. Connection rechecks access and resolves the selected workflow ID to its current path through GitHub; disabled, missing or forged selections are rejected. Each customer can connect up to 20 repositories. Changing the account or repository clears the discovery result.
+4. If the repository has no test workflow, download the starter ZIP. Extract it at the repository root, adapt the reviewed commands and fixtures in `testshift.config.json`, and commit all included files. The starter adds `.github/workflows/testshift.yml`; click **Find workflows** again to select it by name.
 5. Push a commit or open a pull request. GitHub-hosted Actions runs the configured suite with read-only checkout permissions, no persisted checkout credential and no TestShift App keys. A fresh Postgres service is provided by the Node.js starter. Missing scripts fail; they are not treated as passing tests.
 6. GitHub sends a signed `workflow_run` completion event. The webhook verifies the exact raw payload, enforces body/time bounds and atomically deduplicates the delivery and queues the matching repository/commit/attempt.
 7. The separate reporting worker verifies the workflow run and jobs against GitHub's REST API, checks the owner's current administrator permission, publishes a `TestShift QA` check, and stores a private report. Individual assertion counts are not inferred from command/job success. Full runner evidence remains in GitHub Actions.
 8. Customers view their reports on `/repositories` and `/repositories/jobs/[id]`. Both ownership and current GitHub authority are checked before private data is displayed. Disconnecting removes TestShift connections and reports; remove the workflow separately to stop GitHub CI.
 
-The existing public-URL AI browser worker remains independent. This integration executes reviewed repository commands. It does not yet generate new source tests with AI, clone private repositories onto the website host or provision arbitrary application stacks. Installing an App alone cannot create missing tests or guarantee full coverage.
+The existing public-URL AI browser worker remains independent. Repository monitoring works without AI generation. The optional source-based generator is described in [REPOSITORY_GENERATION.md](REPOSITORY_GENERATION.md): it proposes Vitest and Playwright tests with CI in a reviewable pull request. It does not clone or execute customer projects on the website/worker host or provision arbitrary application stacks. Installing an App alone cannot guarantee full coverage.
+
+## Payment behavior
+
+Repository connection and CI reporting currently collect no TestShift payment. There is no repository checkout, paid entitlement, subscription or per-run debit in the connection, webhook or reporting worker. GitHub Actions usage follows the repository owner's GitHub billing. Paid AI website-testing shifts use the separate `/hire` booking flow: a fixed quote, pending-payment order, manual Wise payment confirmation and owner-authorized start. Connecting a repository does not create one of those orders. Charging for repository monitoring would require an explicit product price and billing/entitlement integration; the existing website-shift payment must not be presented as already covering CI.
 
 ## Register and activate the GitHub App
 
@@ -28,13 +32,13 @@ Set production `APP_URL=https://testshift.musme.co`. The callback is `https://te
 | Setup URL | `APP_URL/api/github/setup` |
 | Webhook URL | `APP_URL/api/github/webhook` |
 | Webhook content type | JSON |
-| Repository permissions | Metadata read, Contents read, Actions read, Checks write |
+| Repository permissions | Monitoring: Metadata read, Contents read, Actions read, Checks write. Generation additionally requires Contents write, Pull requests write and Workflows write. |
 | Events | Workflow run, Installation, Installation repositories, GitHub App authorization |
 | Request OAuth authorization during installation | Leave unchecked; TestShift explicitly initiates sign-in with PKCE |
 | User token expiration | Enabled |
 | Installation selection | Selected repositories recommended |
 
-Installation lifecycle and authorization events are provided according to GitHub's App event rules. Do not request Contents write, Actions write, Administration write or Workflows write for this implementation. It reads existing runs and publishes checks; workflow installation is reviewed and committed by the repository administrator.
+Installation lifecycle and authorization events are provided according to GitHub's App event rules. For generation, upgrade Contents to write and add Pull requests write and Workflows write; existing installations must approve that permission update. Actions write and Administration write are unnecessary. Monitoring tokens remain read-only except for Checks write; generation publication uses a separate one-repository write token and never updates the default branch directly.
 
 Set the server-only variables documented in `.env.example`: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` and `GITHUB_TOKEN_ENCRYPTION_KEY`. Use an independently generated webhook secret of at least 32 characters and a separate canonical base64 encoding of 32 random bytes for the token encryption key. The PEM key supports literal newline escapes. Keep these in the deployment secret store; the website never requests customers' passwords or personal tokens.
 
@@ -63,6 +67,8 @@ The worker revalidates lease/connection state before publishing and predicates f
 The worker deletes report jobs and webhook delivery IDs after 30 days, and expired sessions/states during regular cleanup. Delivery deduplication is bounded to that retention window. Customer disconnect cascades report deletion immediately. GitHub retains Actions evidence independently under the customer's policy. Changing the encryption key invalidates stored user tokens and requires sign-in again; App keys and webhook secrets must follow an owner-managed rotation procedure.
 
 ## Verification and deployment limits
+
+Workflow discovery update (2026-10-09): 86 application/security/database tests and 6 action tests passed, followed by all 66 desktop/mobile browser regressions. Production build, lint, TypeScript, self-check, production dependency audit (zero vulnerabilities) and source/generated-client secret scanning (no findings) passed. Browser coverage includes authorized discovery, automatic selection of a single workflow, multiple-workflow selection, no-workflow guidance, invalidation after changing repositories, rejected cross-account access and forged workflow IDs. The connection schema and production data are unchanged. The workflow-picker change is local pending explicit commit/push and deployment authorization.
 
 Local tests cover signature tampering, encryption/account binding, App JWTs, PKCE/state replay/expiry, selected-repository administration checks, immutable workflow identities, deduplication, lease recovery, revocation, broker check publication and token revocation. Browser regressions use a disposable PGlite database and a fixture-only mocked GitHub transport; no live GitHub customer credentials or production integrations are used. The downloadable ZIP and YAML are validated separately. Hosted Actions and live App installation still require a configured deployment and a pilot run.
 

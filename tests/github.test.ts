@@ -2,7 +2,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, generateKeyPairSync, verify } from "node:crypto";
 import { appJwt, digest, opaque, openToken, pkceChallenge, sealToken, validSignature } from "../src/lib/github/crypto";
-import { authorizedRepository, github, GitHubError, withInstallation } from "../src/lib/github/api";
+import { authorizedRepository, github, GitHubError, withInstallation, repositoryWorkflows, activeRepositoryWorkflow } from "../src/lib/github/api";
 import { customerConfig, customerWorkflow } from "../src/lib/github/workflow";
 import { sourceZip } from "../src/lib/github/zip";
 import { reportMarkdown, verifiedReport } from "../worker/github";
@@ -55,6 +55,31 @@ test("repository connection needs both selected-installation access and current 
   await assert.rejects(authorizedRepository("fixture-token", 5, 7, "owner"), GitHubError);
   permission = "admin"; assert.equal((await authorizedRepository("fixture-token", 5, 7, "owner")).id, 7);
 });
+test("workflow discovery paginates, hides disabled or unsupported paths, and returns only names and IDs", async () => {
+  const workflow = { id: 50, name: "Quality checks", path: ".github/workflows/quality-checks.yml", state: "active" };
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls++;
+    const page = new URL(String(url)).searchParams.get("page");
+    if (page === "1") return Response.json({ workflows: Array.from({ length: 100 }, (_, index) => ({ ...workflow, id: index + 1, state: index === 0 ? "active" : "disabled_manually" })) });
+    return Response.json({ workflows: [{ ...workflow, id: 1 }, workflow, { ...workflow, id: 101, path: ".github/workflows/../../outside.yml" }] });
+  };
+  assert.deepEqual(await repositoryWorkflows("fixture-token", "owner/project"), [{ id: 1, name: "Quality checks" }, { id: 50, name: "Quality checks" }]);
+  assert.equal(calls, 2);
+  globalThis.fetch = async () => Response.json({ workflows: [] });
+  assert.deepEqual(await repositoryWorkflows("fixture-token", "owner/project"), []);
+});
+
+test("selected workflows are resolved within the authorized repository and must still be active", async () => {
+  const workflow = { id: 50, name: "Quality checks", path: ".github/workflows/quality-checks.yml", state: "active" };
+  globalThis.fetch = async (url) => { assert.equal(new URL(String(url)).pathname, "/repos/owner/project/actions/workflows/50"); return Response.json(workflow); };
+  assert.equal((await activeRepositoryWorkflow("fixture-token", "owner/project", 50)).path, workflow.path);
+  for (const changed of [{ id: 51 }, { state: "disabled_manually" }, { path: ".github/workflows/../outside.yml" }]) {
+    globalThis.fetch = async () => Response.json({ ...workflow, ...changed });
+    await assert.rejects(activeRepositoryWorkflow("fixture-token", "owner/project", 50), GitHubError);
+  }
+});
+
 test("broker scopes installation tokens to one repository and revokes them on failure", async () => {
   let revoked = false;
   globalThis.fetch = async (url, options) => {
