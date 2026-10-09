@@ -16,6 +16,8 @@ import { startEgressProxy } from "./egress";
 import { launchEngine, launchExtraEngines } from "./engines";
 import { LeaseLostError, withRunLease } from "./lease";
 import { securityChecks } from "./security";
+import { runVisualChecks, type VisualCheck, type Viewport } from "./visual";
+import { configuredImageStore } from "@/lib/image-store";
 import type { SecurityCheck } from "@/lib/security-checks";
 
 // Dev knob: set to e.g. 2 so a booked hour lasts two minutes while you try things out.
@@ -240,6 +242,24 @@ function securityCase(a: PageAudit): Draft {
   };
 }
 
+/** Maps one visual comparison to a UI test case. Blocked means not compared yet, never passed. */
+function visualCheckCase(c: VisualCheck): Draft {
+  return {
+    feature: null,
+    script: [],
+    title: c.title,
+    category: "ui",
+    priority: "medium",
+    viewport: c.viewport,
+    start_url: c.url,
+    steps: c.steps,
+    expected: c.expected,
+    status: c.passed === null ? "blocked" : c.passed ? "passed" : "failed",
+    actual: c.actual,
+    severity: c.severity,
+  };
+}
+
 /** Maps one passive or active security check to a test case. A null result is blocked, not passed. */
 function securityCheckCase(c: SecurityCheck, url: string): Draft {
   return {
@@ -328,6 +348,26 @@ async function seedAutomatedChecks(run: Run, browser: Browser, agent: Agent, pag
   const audits = await auditPages(browser, run.url, urls, { vitals: checks.performance, until });
   const drafts: Draft[] = audits.map(smokeCase);
   if (checks.performance) drafts.push(...audits.map(performanceCase).filter((d): d is Draft => d !== null));
+  if (checks.visual) {
+    await setActivity(run.id, agent.id, `${agent.name} · Visual comparison`);
+    try {
+      const viewports: Viewport[] = checks.mobile ? ["desktop", "mobile"] : ["desktop"];
+      const visual = await runVisualChecks({
+        runId: run.id,
+        browser,
+        siteUrl: run.url,
+        urls,
+        viewports,
+        until,
+        store: configuredImageStore(),
+        withLease: (write) => withRunLease(run.id, lease.token, write),
+      });
+      drafts.push(...visual.map(visualCheckCase));
+    } catch (e) {
+      if (e instanceof LeaseLostError) throw e;
+      log("error", "Visual comparison failed", { runId: run.id, error: errorMessage(e) });
+    }
+  }
   if (checks.securityHeaders && audits[0]) {
     drafts.push(securityCase(audits[0]));
     // Isolated: a failure in the extended checks must not cost the release checks above.

@@ -3,6 +3,7 @@ import { devices, type Browser, type BrowserContext, type Page } from "playwrigh
 
 import type { CompatibilityResult, EngineId, EngineOutcome } from "@/lib/compat";
 import type { BrowserAction, SitePage } from "@/lib/db";
+import { MAX_PAGE_HEIGHT } from "@/lib/visual";
 import { isPrivateIp, isPublicHost, siteKey } from "@/lib/net";
 import { exactTextPattern, scopedUrl, urlMatches, validateAction } from "@/lib/qa";
 
@@ -568,6 +569,64 @@ export async function compatibilityAudit(
     }
   }
   return [...byUrl].map(([url, outcomes]) => ({ url, outcomes }));
+}
+
+export interface PageCapture {
+  url: string;
+  status: number;
+  png: Buffer | null;
+  /** Why no screenshot was taken, in words the customer can read. */
+  skipped: string | null;
+}
+
+/**
+ * Screenshots each page at one viewport. Animations are frozen and the caret is hidden. Video, iframes and
+ * elements marked data-testshift-ignore are masked, so they never cause false differences.
+ */
+export async function captureScreenshots(
+  browser: Browser,
+  siteUrl: string,
+  urls: string[],
+  viewport: "desktop" | "mobile",
+  until: number,
+): Promise<PageCapture[]> {
+  const context = await openContext(browser, viewport, siteUrl);
+  const deadline = closeAt(context, until);
+  const captures: PageCapture[] = [];
+  try {
+    const page = await context.newPage();
+    for (const url of urls) {
+      if (Date.now() > until) break;
+      const result = await visit(page, url);
+      const readable = await assertReadable(page).then(() => true, () => false);
+      if (!readable) {
+        captures.push({ url, status: result.status, png: null, skipped: "The page could not be read safely." });
+        break;
+      }
+      if (result.status < 200 || result.status >= 400) {
+        captures.push({ url, status: result.status, png: null, skipped: `The page returned HTTP ${result.status || "no response"}.` });
+        continue;
+      }
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      if (height > MAX_PAGE_HEIGHT) {
+        captures.push({ url, status: result.status, png: null, skipped: `The page is ${height} px tall; pages over ${MAX_PAGE_HEIGHT} px are not compared.` });
+        continue;
+      }
+      const png = await page.screenshot({
+        fullPage: true,
+        animations: "disabled",
+        caret: "hide",
+        type: "png",
+        mask: [page.locator("video, iframe, [data-testshift-ignore]")],
+        timeout: 15_000,
+      });
+      captures.push({ url, status: result.status, png: Buffer.from(png), skipped: null });
+    }
+  } finally {
+    clearTimeout(deadline);
+    await context.close().catch(() => undefined);
+  }
+  return captures;
 }
 
 /** Runs axe-core's WCAG 2.2 AA rules and a keyboard focus check on each page for the UAT agent. A page that can't be audited is skipped. */

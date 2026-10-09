@@ -9,6 +9,7 @@ import { formatDuration, PLANS } from "@/lib/plans";
 import { isSiteVerified, getOrCreateVerification, dnsRecordName, dnsRecordValue, VERIFICATION_DAYS, VERIFICATION_FILE_PATH } from "@/lib/ownership";
 import { ApiChecks, type ApiCheckRow } from "./ApiChecks";
 import { OwnershipPanel } from "./OwnershipPanel";
+import { VisualSnapshots, type VisualSnapshotRow } from "./VisualSnapshots";
 import { LiveShift } from "./LiveShift";
 import { Report } from "./Report";
 import { BetaOrderNotice } from "./BetaOrderNotice";
@@ -50,6 +51,11 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
   const ownership = run.status === "completed"
     ? { record: await getOrCreateVerification(ownershipHost), fresh: await isSiteVerified(ownershipHost) }
     : null;
+  const visualRows = run.status === "completed"
+    ? await db()<VisualSnapshotRow[]>`select id, path, viewport, status, changed_ratio, width, height,
+        baseline_key is not null as has_baseline, diff_key is not null as has_diff
+        from visual_snapshots where run_id = ${id} order by created_at, id`
+    : [];
   const plan = PLANS[run.plan];
 
   return (
@@ -69,6 +75,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
           <div className="space-y-14">
             <Report run={run} cases={cases} />
             <ApiChecks rows={apiChecks} specUrl={run.api_spec_url ?? null} latency={run.api_latency ?? null} />
+            <VisualSnapshots runId={id} rows={visualRows} />
             {ownership && <OwnershipPanel
               runId={id}
               host={ownershipHost}
