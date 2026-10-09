@@ -83,6 +83,7 @@ export interface Run {
   quoted_total_cents?: number | null;
   payment_confirmed_at?: Date | null;
   start_authorized_at?: Date | null;
+  api_spec_url?: string | null;
 }
 
 export const BROWSER_ACTIONS = [
