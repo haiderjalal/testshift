@@ -1,7 +1,7 @@
 export const SITE = {
   name: "TestShift",
   description:
-    "Rent a team of four AI QA agents by the hour. Dev, Staging, UAT and Prod agents run unit, integration, end-to-end and smoke tests in a real browser and hand you the bug report.",
+    "Rent a team of four AI QA agents by the hour. Dev, Staging, UAT and Prod agents run functional, API, visual, performance and security tests in a real browser and hand you the bug report.",
 };
 
 /** Claude models the tester can run on, with list prices in USD per million tokens (cache writes are 5-minute, 1.25× input). */
@@ -39,6 +39,7 @@ export const PLANS = {
     features: [
       "Dev, Staging, UAT and Prod agents",
       "Unit, integration, end-to-end and smoke tests",
+      "API checks from your OpenAPI, Swagger or Postman",
       "Desktop browser testing",
       "Bug report and Playwright suite",
     ],
@@ -71,8 +72,11 @@ export const PLANS = {
     pitch: "Adds accessibility and performance audits.",
     features: [
       "Everything in Senior QA",
-      "Accessibility audit (WCAG 2 AA) on every page",
-      "Performance audit: load speed and layout shift",
+      "Accessibility audit (WCAG 2.2 AA) and keyboard checks",
+      "Performance: load speed, layout shift and API latency",
+      "Visual regression against approved screenshots",
+      "Exploratory testing agent",
+      "Load tests on approved test environments",
       "High-effort reasoning, more thorough plans",
     ],
     checks: { mobile: true, accessibility: true, performance: true, securityHeaders: false, visual: true, exploratory: true },
@@ -89,7 +93,7 @@ export const PLANS = {
     features: [
       "Everything in Lead QA",
       "Our most advanced personalized agents",
-      "Security-header review",
+      "Security review: headers, cookies, TLS and exposed files",
       "Priority queue: your shift starts first",
     ],
     checks: { mobile: true, accessibility: true, performance: true, securityHeaders: true, visual: true, exploratory: true },

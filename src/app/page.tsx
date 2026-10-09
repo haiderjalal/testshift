@@ -9,6 +9,7 @@ import { loadLandingPrices } from "@/lib/beta-orders";
 export const dynamic = "force-dynamic";
 
 import { Consoles } from "./_landing/Consoles";
+import { Coverage } from "./_landing/Coverage";
 import { Hero } from "./_landing/Hero";
 import { Pipeline } from "./_landing/Pipeline";
 import { Pricing } from "./_landing/Pricing";
@@ -32,6 +33,14 @@ const FAQS = [
     a: "It's one AI tester working your shift in four modes, one after another, each with its own test type and instructions: Dev runs unit-level tests, Staging integration tests, UAT end-to-end journeys and Prod smoke and release checks. Every test in your report says which agent ran it.",
   },
   {
+    q: "Where does the testing happen?",
+    a: "On our test worker: a dedicated server that runs a real browser against your site, the way a careful user would. Nothing is installed on your side. You can watch the shift live, and the report arrives by email when it ends.",
+  },
+  {
+    q: "What runs in a one- or two-hour shift?",
+    a: "Every shift maps your site, writes a test strategy and checks your API if it publishes an OpenAPI or Swagger description. Then the Dev, Staging, UAT and Prod agents test in turn until your time is up. Your plan adds the audits listed under What a shift tests. More hours mean more tests and deeper coverage, not different tools.",
+  },
+  {
     q: "How can you run unit tests without my code?",
     a: "The Dev agent tests each unit of your interface on its own through the browser: one field's validation, one button, one link. Unit tests against your source code need repository access, which is on our roadmap.",
   },
@@ -41,7 +50,7 @@ const FAQS = [
   },
   {
     q: "Is it safe to run on my live site?",
-    a: "The agents fill forms with obvious test data, never enter card details and avoid irreversible actions. If a form places orders or emails real people, point them at a staging URL instead.",
+    a: "The agents fill forms with obvious test data, never enter card details and avoid irreversible actions. Load tests and API requests that change data run only on a test environment you have verified and we have approved. If a form places orders or emails real people, point us at a staging URL instead.",
   },
   {
     q: "What happens when the shift ends?",
@@ -62,6 +71,7 @@ export default async function Home() {
         <Hero />
         <Ticker />
         <Pipeline />
+        <Coverage />
 
         <section data-stage="overview" aria-labelledby="live-heading" className="mx-auto max-w-7xl px-5 py-28 sm:px-8">
           <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">Live shift</p>
