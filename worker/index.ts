@@ -9,6 +9,7 @@ import { PLANS } from "@/lib/plans";
 import { executeCase, planTests, writeReport, writeStrategy, type CaseDraft } from "./ai";
 import { accessibilityAudit, auditPages, crawlSite, registerEgressBrowser, splitIssues, type AccessibilityResult, type PageAudit } from "./browser";
 import { AiBudget, BudgetExceededError, DeadlineError, budgetLimit, endBudget, startBudget } from "./budget";
+import { runApiChecks } from "./api";
 import { startEgressProxy } from "./egress";
 import { LeaseLostError, withRunLease } from "./lease";
 
@@ -28,6 +29,8 @@ const CLS_POOR = 0.25;
 const CASES_PER_MINUTE = 1.5;
 const MIN_BATCH = 5;
 const MAX_BATCH = 12;
+// Share of the time left after mapping that API checks may use. Agents get the rest.
+const API_SHARE = 0.1;
 
 type Draft = CaseDraft & Partial<Pick<TestCase, "status" | "actual" | "severity">>;
 
@@ -332,6 +335,23 @@ async function runPhase(
 }
 
 /** The whole pipeline: map the site, then Dev → Staging → UAT → Prod, each in its share of the shift. */
+/** Tests the site's documented read-only API. Stored once per shift; a resumed shift skips it. */
+async function runApiPhase(run: Run, stopAt: number): Promise<void> {
+  const [{ done }] = await db()<{ done: boolean }[]>`select exists (select 1 from api_checks where run_id = ${run.id}) as done`;
+  if (done) return;
+  await setActivity(run.id, "staging", "Staging agent · API checks");
+  const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
+  const { specUrl, rows } = await runApiChecks(new URL(run.url), until);
+  await withRunLease(run.id, lease.token, async (sql) => {
+    await sql`update runs set api_spec_url = ${specUrl} where id = ${run.id}`;
+    for (const row of rows) {
+      await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, skipped_reason, passed, severity, checks)
+        values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)})`;
+    }
+  });
+  log("info", "API checks stored", { runId: run.id, operations: rows.length, spec: Boolean(specUrl) });
+}
+
 async function runShift(run: Run, browser: Browser, stopAt: number): Promise<void> {
   const start = run.started_at?.getTime() ?? Date.now();
 
@@ -354,6 +374,13 @@ async function runShift(run: Run, browser: Browser, stopAt: number): Promise<voi
       // Planning still works without a strategy, just with less coverage tracking.
       log("error", "Strategy failed", { runId: run.id, error: errorMessage(e) });
     }
+  }
+  // API checks run before the browser agents, so their time comes out of the agents' share, not on top of it.
+  try {
+    await runApiPhase(run, stopAt);
+  } catch (e) {
+    if (e instanceof LeaseLostError) throw e;
+    log("error", "API phase failed", { runId: run.id, error: errorMessage(e) });
   }
   // A crashed worker may have left a case half-run.
   await withRunLease(run.id, lease.token, async (sql) => { await sql`update test_cases set status = 'pending' where run_id = ${run.id} and status = 'running'`; });

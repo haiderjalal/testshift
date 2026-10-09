@@ -6,6 +6,7 @@ import { db, isUuid, type Run, type TestCase } from "@/lib/db";
 import { emailConfigured } from "@/lib/email";
 import { formatDuration, PLANS } from "@/lib/plans";
 
+import { ApiChecks, type ApiCheckRow } from "./ApiChecks";
 import { LiveShift } from "./LiveShift";
 import { Report } from "./Report";
 import { BetaOrderNotice } from "./BetaOrderNotice";
@@ -22,7 +23,7 @@ async function getRun(id: string): Promise<RunView | undefined> {
   // Elapsed time comes from the database clock, the same one that set the deadline.
   const [run] = await db()<RunView[]>`
     select id, url, email, plan, minutes, is_trial, notes, status, activity, agent, report, strategy, error, stripe_session_id,
-      started_at, deadline_at, completed_at, created_at, payment_method, quoted_hourly_cents, quoted_total_cents, payment_confirmed_at, start_authorized_at,
+      started_at, deadline_at, completed_at, created_at, payment_method, quoted_hourly_cents, quoted_total_cents, payment_confirmed_at, start_authorized_at, api_spec_url,
       (extract(epoch from least(now(), deadline_at) - started_at) * 1000)::float8 as elapsed_ms
     from runs where id = ${id}`;
   return run;
@@ -39,6 +40,10 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
     select id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
       actions, screenshot is not null as has_screenshot, finished_at
     from test_cases where run_id = ${id} order by seq`;
+  const apiChecks = run.status === "completed"
+    ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, skipped_reason, passed, severity, checks
+        from api_checks where run_id = ${id} order by created_at, id`
+    : [];
   const plan = PLANS[run.plan];
 
   return (
@@ -55,7 +60,10 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
         {run.payment_method === "wise" && <BetaOrderNotice run={run} />}
 
         {run.status === "completed" ? (
-          <Report run={run} cases={cases} />
+          <div className="space-y-14">
+            <Report run={run} cases={cases} />
+            <ApiChecks rows={apiChecks} specUrl={run.api_spec_url ?? null} />
+          </div>
         ) : run.status === "failed" ? (
           <div role="alert" className="glass mt-10 rounded-2xl border-fail/40 p-6">
             <p className="font-display text-lg font-semibold">This shift stopped early.</p>
