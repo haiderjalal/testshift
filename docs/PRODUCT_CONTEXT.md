@@ -173,7 +173,11 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 ```
 src/app/
   page.tsx                  landing page (composes the sections below + FAQ, CTA, footer)
-  _landing/                 Hero, ShiftHud, Ticker, Pipeline, Consoles, ReportStack, Pricing, samples.ts
+  _landing/                 Hero, ShiftHud (test-run readout), Ticker, Pipeline + AgentExplorer (agent tablist),
+                            Coverage + CoverageMatrix (plan test matrix), Consoles, Deliverables + ReportStack,
+                            Pricing + PlanGrid (hours estimator), Faq, FinalCta, samples.ts
+  components/               SiteHeader + MobileMenu, SpotlightCard (pointer light and tilt), UrlForm, Logo
+  hooks/                    usePrefersReducedMotion, useInView, useRotatingIndex
   layout.tsx, globals.css   fonts, PipelineScene backdrop, colour tokens, all motion
   error.tsx                 friendly error page
   hire/                     booking page, form (plans, trial/hours), server action
@@ -278,9 +282,11 @@ npm run lint && npm run typecheck && npm run check && npm run build
 - **Landing motion:**
   - Headline characters rise in, with a ticking sample-shift readout.
   - An endless ticker of sample checks.
-  - Pinned agent panels with a rail that fills as you scroll and a sticky stepper that follows the section.
-  - Four typing consoles, an exploding 3D report stack, and a score that counts up on scroll.
-  - Pricing cards tilt in, with rotating four-colour borders.
+  - Agent tablist: four agents with a shift-split bar. It steps through the pipeline while on screen until a visitor picks an agent, and the 3D camera flies to the agent in focus. Arrow, Home and End keys work.
+  - The header fills a reading-progress line as you scroll; on phones the section links sit behind a menu button.
+  - Four typing consoles, an exploding 3D report stack that lights the deliverable being read, and a score that counts up on scroll.
+  - Coverage matrix: pick a plan to see which tests it runs (same plan flags the worker uses). Pricing: pick hours to see estimated totals, which carry into the booking link.
+  - Focal cards follow the pointer with a light and a tilt. Motion is skipped for reduced-motion visitors.
 - **Everywhere:** CSS scroll-driven animations with no JavaScript (Firefox shows the final state), and `prefers-reduced-motion` stops all motion.
 
 ---
