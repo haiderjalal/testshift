@@ -1,4 +1,4 @@
-const LAYERS = [
+export const LAYERS = [
   { label: "Playwright suite", tone: "bg-raised", accent: "var(--color-dev)" },
   { label: "Bug report", tone: "bg-card", accent: "var(--color-marker)" },
   { label: "Real-browser runs", tone: "bg-card", accent: "var(--color-pass)" },
@@ -47,27 +47,37 @@ function LayerContent({ label }: { label: string }) {
   );
 }
 
-/** The deliverable as an exploded isometric stack; the layers separate as it scrolls into view. */
-export function ReportStack() {
+/**
+ * The deliverable as an exploded isometric stack; the layers separate as it scrolls into view.
+ * `activeLabel` lights one layer and dims the rest, so it can follow the deliverable being read.
+ */
+export function ReportStack({ activeLabel }: { activeLabel?: string }) {
   return (
     <div className="stack-scene relative mx-auto h-[28rem] w-full max-w-md" aria-hidden>
       <div className="absolute top-[58%] left-1/2 h-52 w-80 -translate-x-1/2 -translate-y-1/2">
         <div className="stack relative size-full">
-          {LAYERS.map((layer, i) => (
-            <div
-              key={layer.label}
-              style={{
-                ["--i" as string]: LAYERS.length - 1 - i,
-                boxShadow: `0 0 0 1px color-mix(in srgb, ${layer.accent} 45%, transparent), 0 24px 50px -24px ${layer.accent}`,
-              }}
-              className={`stack-layer rounded-xl p-4 ${layer.tone}`}
-            >
-              <p className="mb-3 text-[10px] font-semibold tracking-wide uppercase" style={{ color: layer.accent }}>
-                {layer.label}
-              </p>
-              <LayerContent label={layer.label} />
-            </div>
-          ))}
+          {LAYERS.map((layer, i) => {
+            const active = layer.label === activeLabel;
+            return (
+              <div
+                key={layer.label}
+                style={{
+                  ["--i" as string]: LAYERS.length - 1 - i,
+                  boxShadow: active
+                    ? `0 0 0 1px ${layer.accent}, 0 30px 60px -20px ${layer.accent}`
+                    : `0 0 0 1px color-mix(in srgb, ${layer.accent} 45%, transparent), 0 24px 50px -24px ${layer.accent}`,
+                }}
+                className={`stack-layer rounded-xl p-4 transition-[opacity,filter,box-shadow] duration-500 ${layer.tone} ${
+                  activeLabel && !active ? "opacity-55" : ""
+                } ${active ? "brightness-125" : ""}`}
+              >
+                <p className="mb-3 text-[10px] font-semibold tracking-wide uppercase" style={{ color: layer.accent }}>
+                  {layer.label}
+                </p>
+                <LayerContent label={layer.label} />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

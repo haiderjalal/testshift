@@ -10,7 +10,7 @@ import { ShiftHud } from "./ShiftHud";
 export function Hero() {
   return (
     <section data-stage="hero" className="relative flex min-h-[calc(100dvh-4rem)] items-center">
-      <div className="mx-auto grid w-full max-w-7xl items-end gap-12 px-5 pt-14 pb-20 sm:px-8 lg:grid-cols-[1.25fr_1fr]">
+      <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-5 pt-14 pb-20 sm:px-8 lg:grid-cols-[1.1fr_1fr]">
         <div>
           <ul className="rise flex flex-wrap items-center gap-2 font-mono text-[11px] tracking-wider uppercase" aria-label="The four agents">
             {AGENTS.map((a, i) => (
@@ -50,7 +50,7 @@ export function Hero() {
           </p>
         </div>
 
-        <div className="rise hidden justify-end self-start lg:flex" style={{ ["--d" as string]: 9 }}>
+        <div className="rise w-full max-w-md justify-self-start lg:justify-self-end" style={{ ["--d" as string]: 9 }}>
           <ShiftHud />
         </div>
       </div>
