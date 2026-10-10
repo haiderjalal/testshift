@@ -19,18 +19,24 @@ const MARKS: Record<LogStatus, { glyph: string; label: string; className: string
   running: { glyph: "…", label: "In progress", className: "text-ink animate-pulse" },
 };
 
-/** The running record of a shift: one line per test, tagged with its agent, failures highlighted. */
+/**
+ * The running record of a shift as a terminal feed. Entries render in the order given, so the caller
+ * puts the newest first. Each row wraps on phones so the test title keeps the full width.
+ */
 export function ShiftLog({ entries }: { entries: LogEntry[] }) {
   return (
-    <ol className="divide-y divide-rule/70 font-mono text-[13px] leading-5">
+    <ol className="font-mono text-[13px] leading-6">
       {entries.map((e) => {
         const mark = MARKS[e.status];
         const agent = e.agent ? agentById(e.agent) : null;
         return (
-          <li key={e.id} className="flex gap-3 py-2.5">
+          <li
+            key={e.id}
+            className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-rule/60 py-2.5 last:border-b-0 sm:flex-nowrap"
+          >
             <span className="w-[4.5rem] shrink-0 text-graphite tabular-nums">{e.time}</span>
             {agent && (
-              <span className="w-14 shrink-0 text-[10px] leading-5 font-semibold tracking-widest uppercase" style={{ color: agent.color }}>
+              <span className="w-14 shrink-0 text-[10px] font-semibold tracking-widest uppercase" style={{ color: agent.color }}>
                 {agent.id}
               </span>
             )}
@@ -38,8 +44,8 @@ export function ShiftLog({ entries }: { entries: LogEntry[] }) {
               <span aria-hidden>{mark.glyph}</span>
               <span className="sr-only">{mark.label}:</span>
             </span>
-            <span className="min-w-0 flex-1">
-              <span className={e.status === "fail" ? "marker" : ""}>{e.text}</span>
+            <span className="min-w-0 basis-full break-words sm:flex-1 sm:basis-0">
+              <span className={e.status === "fail" ? "marker" : "text-ink/90"}>{e.text}</span>
               {e.tag && <span className="ml-2 text-[11px] font-semibold tracking-wider text-fail uppercase">{e.tag}</span>}
             </span>
           </li>
