@@ -50,7 +50,7 @@ export function Hero() {
           </p>
         </div>
 
-        <div className="rise w-full max-w-md justify-self-start lg:justify-self-end" style={{ ["--d" as string]: 9 }}>
+        <div className="rise w-full max-w-md justify-self-start lg:mt-14 lg:justify-self-end lg:self-start" style={{ ["--d" as string]: 9 }}>
           <ShiftHud />
         </div>
       </div>
