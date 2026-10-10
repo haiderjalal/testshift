@@ -1,14 +1,13 @@
 "use client";
 
-import { startTransition, useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useState, type FormEvent, type ReactElement } from "react";
 import { TESTING_MODES, type TestingMode } from "@/lib/repository-testing";
 
 import { requestQuote, type CustomState } from "./actions";
 
-const field =
-  "mt-2 w-full rounded-xl border border-rule bg-card px-4 py-3 outline-none placeholder:text-graphite/70 focus:border-ink aria-invalid:border-fail";
+const field = "field-input mt-2";
 
-export function CustomForm({ defaultMode = "website" }: { defaultMode?: TestingMode }) {
+export function CustomForm({ defaultMode = "website" }: { defaultMode?: TestingMode }): ReactElement {
   const [mode, setMode] = useState<TestingMode>(defaultMode);
   const [state, action, pending] = useActionState<CustomState, FormData>(requestQuote, {});
   const errors = state.errors ?? {};
@@ -22,7 +21,7 @@ export function CustomForm({ defaultMode = "website" }: { defaultMode?: TestingM
 
   if (state.sent) {
     return (
-      <div role="status" className="mt-10 rounded-2xl border border-pass/40 bg-card p-8">
+      <div role="status" className="mt-12 rounded-2xl border border-pass/40 bg-card p-8">
         <p className="font-display text-xl font-semibold text-pass">Request sent.</p>
         <p className="mt-2 text-graphite">We&apos;ll reply by email with a quote that fits what you described.</p>
       </div>
@@ -51,7 +50,7 @@ export function CustomForm({ defaultMode = "website" }: { defaultMode?: TestingM
   );
 
   return (
-    <form onSubmit={handleSubmit} className="mt-10 space-y-7" noValidate>
+    <form onSubmit={handleSubmit} className="mt-12 space-y-7" noValidate>
       <div>
         <label htmlFor="mode" className="font-medium">Testing option</label>
         <select id="mode" name="mode" value={mode} onChange={(event) => setMode(event.target.value as TestingMode)} className={field} aria-invalid={Boolean(errors.mode)} aria-describedby={errors.mode ? "mode-error" : undefined}>
@@ -59,7 +58,7 @@ export function CustomForm({ defaultMode = "website" }: { defaultMode?: TestingM
         </select>
         {errors.mode && <p id="mode-error" role="alert" className="mt-2 text-sm text-fail">{errors.mode}</p>}
       </div>
-      {mode !== "website" && <div className="space-y-4 rounded-xl border border-rule p-5">
+      {mode !== "website" && <div className="space-y-4 rounded-2xl border border-rule bg-raised/40 p-5">
         {input("repository", "GitHub repository", { type: "url", required: true, placeholder: "https://github.com/owner/repo", maxLength: 300 })}
         <p className="text-sm text-graphite">Public or private repository link only. Access is arranged during onboarding. Do not paste passwords, tokens or production credentials.</p>
         <label className="flex gap-3 text-sm"><input type="checkbox" name="destructive" className="mt-1 size-4 accent-ink" /><span>Include a plan for destructive tests in a disposable environment. This does not authorize a run or changes to production.</span></label>

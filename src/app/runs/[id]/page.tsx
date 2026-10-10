@@ -63,12 +63,17 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
     <>
       <SiteHeader />
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 pt-10 pb-24 sm:px-8">
-        <p className="font-mono text-xs text-graphite">
+        <p className="rise font-mono text-xs tracking-wide text-graphite">
           {plan.name} · {formatDuration(run.minutes)}
           {run.is_trial && " · free trial"} · booked{" "}
           {run.created_at.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
         </p>
-        <h1 className="mt-3 font-display text-4xl font-semibold tracking-[-0.03em] break-words sm:text-5xl">{new URL(run.url).hostname}</h1>
+        <h1
+          className="rise mt-3 font-display text-4xl font-semibold tracking-[-0.03em] break-words sm:text-5xl"
+          style={{ ["--d" as string]: 1 }}
+        >
+          {new URL(run.url).hostname}
+        </h1>
 
         {run.payment_method === "wise" && <BetaOrderNotice run={run} />}
 
@@ -90,12 +95,20 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
             />}
           </div>
         ) : run.status === "failed" ? (
-          <div role="alert" className="glass mt-10 rounded-2xl border-fail/40 p-6">
-            <p className="font-display text-lg font-semibold">This shift stopped early.</p>
-            <p className="mt-2 text-graphite">The tester stopped before finishing. Contact support with the link to this page.</p>
+          // Plain surface, not .glass: the glass border would override the fail-coloured edge.
+          <div role="alert" className="mt-10 flex gap-4 rounded-3xl border border-fail/40 bg-card p-6 sm:p-8">
+            <span aria-hidden className="font-semibold text-fail">✗</span>
+            <div>
+              <p className="font-display text-lg font-semibold">This shift stopped early.</p>
+              <p className="mt-2 text-graphite">The tester stopped before finishing. Contact support with the link to this page.</p>
+            </div>
           </div>
         ) : run.status === "pending_payment" || run.status === "paid" ? (
-          run.payment_method !== "wise" && <p className="mt-6">This legacy order is on hold. Email {BETA_CONTACT.email} with your order reference for beta onboarding.</p>
+          run.payment_method !== "wise" && (
+            <div className="glass glass-strong mt-10 rounded-3xl p-6 sm:p-8">
+              <p>This legacy order is on hold. Email {BETA_CONTACT.email} with your order reference for beta onboarding.</p>
+            </div>
+          )
         ) : (
           <LiveShift run={run} elapsed={run.elapsed_ms ?? 0} cases={cases} emailConfigured={emailConfigured()} />
         )}

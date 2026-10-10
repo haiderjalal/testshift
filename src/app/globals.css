@@ -95,6 +95,10 @@ body {
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--color-ink) 9%, transparent);
 }
+/* Use with .glass on text-heavy surfaces that sit over the 3D scene, so the scene never reads through the copy. */
+.glass-strong {
+  background: color-mix(in srgb, var(--color-card) 92%, transparent);
+}
 
 /* Rotating four-agent border. Faint at rest, bright on hover. */
 @property --angle {
@@ -364,26 +368,7 @@ body {
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
 }
 
-/* ------------------------------------------------------------------ pipeline stepper (follows the section you read) */
-
-.stage-node {
-  color: var(--color-graphite);
-  border-color: var(--color-rule);
-  transition:
-    color 400ms,
-    border-color 400ms,
-    background 400ms,
-    box-shadow 400ms;
-}
-html[data-stage="dev"] .stage-node[data-agent="dev"],
-html[data-stage="staging"] .stage-node[data-agent="staging"],
-html[data-stage="uat"] .stage-node[data-agent="uat"],
-html[data-stage="prod"] .stage-node[data-agent="prod"] {
-  color: var(--color-paper);
-  border-color: var(--agent);
-  background: var(--agent);
-  box-shadow: 0 0 30px -4px var(--agent);
-}
+/* ------------------------------------------------------------------ 3D scene */
 
 /* The 3D scene steps back in text-heavy sections and on phones, so copy stays readable. */
 html[data-stage="overview"] canvas[data-ready="true"] {
@@ -423,18 +408,6 @@ html[data-stage="overview"] canvas[data-ready="true"] {
     animation-range: entry 0% entry 60%;
   }
 
-  @keyframes reveal-side {
-    from {
-      opacity: 0;
-      transform: translateX(-60px) rotateY(12deg);
-    }
-  }
-  .reveal-side {
-    animation: reveal-side linear both;
-    animation-timeline: view();
-    animation-range: entry 0% cover 35%;
-  }
-
   @keyframes explode {
     from {
       transform: translateZ(calc(var(--i) * 10px));
@@ -447,20 +420,6 @@ html[data-stage="overview"] canvas[data-ready="true"] {
     animation: explode linear both;
     animation-timeline: --stack;
     animation-range: entry 20% cover 50%;
-  }
-
-  @keyframes rail {
-    from {
-      transform: scaleY(0);
-    }
-  }
-  .pipeline {
-    view-timeline: --pipeline block;
-  }
-  .pipeline-rail {
-    animation: rail linear both;
-    animation-timeline: --pipeline;
-    animation-range: cover 10% cover 90%;
   }
 
   @keyframes tilt-in {
@@ -539,6 +498,127 @@ html[data-stage="overview"] canvas[data-ready="true"] {
   transform-origin: left;
   animation: bar-grow 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   animation-delay: 1s;
+}
+
+/* ------------------------------------------------------------------ spotlight cards (see SpotlightCard.tsx) */
+
+/* A light follows the pointer across the card. SpotlightCard sets --mx, --my and, for tilt cards, --rx and --ry. */
+.spotlight {
+  --accent: var(--color-dev);
+  --mx: 50%;
+  --my: 50%;
+  position: relative;
+  isolation: isolate;
+  transition: border-color 300ms;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(22rem circle at var(--mx) var(--my), color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%);
+  opacity: 0;
+  transition: opacity 400ms;
+}
+.spotlight:hover::before {
+  opacity: 1;
+}
+.spotlight:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Tilt is a transform, so it lives on its own element; scroll and float animations wrap it, never sit on it. */
+.spotlight-tilt {
+  --rx: 0deg;
+  --ry: 0deg;
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry));
+  transition:
+    transform 400ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 300ms;
+}
+
+/* ------------------------------------------------------------------ reading progress (header bottom edge) */
+
+.scroll-progress {
+  background: linear-gradient(90deg, var(--color-dev), var(--color-staging), var(--color-uat), var(--color-prod));
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+@supports (animation-timeline: scroll()) {
+  @keyframes grow-x {
+    to {
+      transform: scaleX(1);
+    }
+  }
+  .scroll-progress {
+    animation: grow-x linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+
+/* ------------------------------------------------------------------ closing glow */
+
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orb {
+  animation: orb-spin 24s linear infinite;
+}
+
+/* ------------------------------------------------------------------ FAQ accordion */
+
+/* Animates native <details> open and closed where ::details-content is supported; elsewhere it simply opens. */
+:root {
+  interpolate-size: allow-keywords;
+}
+.faq::details-content {
+  block-size: 0;
+  overflow: hidden;
+  content-visibility: hidden;
+  transition:
+    block-size 380ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    content-visibility 380ms allow-discrete;
+}
+.faq[open]::details-content {
+  block-size: auto;
+  content-visibility: visible;
+}
+
+/* ------------------------------------------------------------------ form fields (one look for every input site-wide) */
+
+.field-input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0.875rem;
+  border: 1px solid var(--color-rule);
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  padding: 0.75rem 1rem;
+  color: var(--color-ink);
+  outline: none;
+  transition:
+    border-color 200ms,
+    box-shadow 200ms,
+    background-color 200ms;
+}
+.field-input::placeholder {
+  color: color-mix(in srgb, var(--color-graphite) 70%, transparent);
+}
+.field-input:hover {
+  border-color: color-mix(in srgb, var(--color-graphite) 60%, transparent);
+}
+.field-input:focus-visible {
+  border-color: var(--color-dev);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-dev) 22%, transparent);
+}
+.field-input[aria-invalid="true"] {
+  border-color: var(--color-fail);
+}
+.field-input:disabled {
+  opacity: 0.6;
 }
 
 /* ------------------------------------------------------------------ reduced motion: everything still, nothing hidden */

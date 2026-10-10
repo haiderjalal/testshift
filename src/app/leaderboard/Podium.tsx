@@ -1,15 +1,18 @@
+import type { ReactElement } from "react";
+
 import type { LeaderboardEntry } from "@/lib/leaderboard";
 
 import { bugLabel, scoreColor } from "./score";
 
 // Each place gets an agent hue; first place gets the rotating four-agent border.
-const PLACE = {
+// Exported so the empty board can mirror the same podium layout.
+export const PLACE = {
   1: { color: "var(--color-pass)", height: "sm:min-h-[22rem]", order: "sm:order-2", label: "1st" },
   2: { color: "var(--color-dev)", height: "sm:min-h-[19rem]", order: "sm:order-1", label: "2nd" },
   3: { color: "var(--color-staging)", height: "sm:min-h-[17rem]", order: "sm:order-3", label: "3rd" },
 } as const;
 
-export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
+export function Podium({ entries }: { entries: LeaderboardEntry[] }): ReactElement {
   return (
     <section aria-labelledby="podium-heading" className="mt-14">
       <h2 id="podium-heading" className="sr-only">
@@ -18,6 +21,7 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
       <ol className="grid items-end gap-4 sm:grid-cols-3">
         {entries.map((e) => {
           const place = PLACE[e.rank as 1 | 2 | 3];
+          const color = scoreColor(e.score);
           return (
             <li
               key={e.host}
@@ -48,8 +52,8 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
                   {e.host}
                 </a>
                 <p
-                  className="count-up mt-auto pt-6 font-display text-6xl font-semibold tracking-tight"
-                  style={{ ["--to" as string]: e.score, color: scoreColor(e.score) }}
+                  className={`count-up mt-auto pt-6 font-display font-semibold tracking-tight ${e.rank === 1 ? "text-7xl" : "text-6xl"}`}
+                  style={{ ["--to" as string]: e.score, color }}
                   aria-hidden
                 />
                 <p className="mt-1 text-sm text-graphite">
@@ -57,6 +61,9 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
                   <span aria-hidden>score · </span>
                   <span className={e.bugs ? "text-marker" : "text-pass"}>{bugLabel(e.bugs)}</span>
                 </p>
+                <div aria-hidden className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-rule">
+                  <div className="score-bar h-full rounded-full" style={{ width: `${e.score}%`, background: color }} />
+                </div>
               </div>
             </li>
           );

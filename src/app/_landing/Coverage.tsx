@@ -1,4 +1,6 @@
-import { PLAN_IDS, PLANS, type PlanId } from "@/lib/plans";
+import { PLANS, PLAN_IDS, type PlanId } from "@/lib/plans";
+
+import { CoverageMatrix, type CoverageRow } from "./CoverageMatrix";
 
 type PlanCheck = keyof (typeof PLANS)[PlanId]["checks"];
 
@@ -79,6 +81,14 @@ function availability(check: PlanCheck | null): string {
 }
 
 export function Coverage() {
+  const rows: CoverageRow[] = COVERAGE.map((item) => ({
+    title: item.title,
+    body: item.body,
+    check: item.check,
+    label: availability(item.check),
+    condition: item.condition,
+  }));
+
   return (
     <section id="coverage" data-stage="overview" aria-labelledby="coverage-heading" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-28 sm:px-8">
       <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">What a shift tests</p>
@@ -89,18 +99,7 @@ export function Coverage() {
         Every test runs on our test worker: a dedicated server with a real browser, guarded so it cannot reach private networks or wander off your site. Nothing is installed on your side. A one-hour and an eight-hour shift use the same tools; longer shifts go deeper and cover more.
       </p>
 
-      <ul className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {COVERAGE.map((item) => (
-          <li key={item.title} className="glass reveal flex flex-col rounded-2xl p-6">
-            <p className="font-mono text-[11px] tracking-wider text-dev uppercase">
-              {availability(item.check)}
-              {item.condition && <span className="text-graphite"> · {item.condition}</span>}
-            </p>
-            <h3 className="mt-3 font-display text-lg font-semibold">{item.title}</h3>
-            <p className="mt-2 leading-relaxed text-graphite">{item.body}</p>
-          </li>
-        ))}
-      </ul>
+      <CoverageMatrix rows={rows} />
     </section>
   );
 }

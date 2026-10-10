@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PageIntro } from "@/components/PageIntro";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SplitText } from "@/components/SplitText";
 import { loadLeaderboard, type LeaderboardEntry } from "@/lib/leaderboard";
 
+import { EmptyBoard } from "./EmptyBoard";
 import { Podium } from "./Podium";
 import { RankRow } from "./RankRow";
 
@@ -28,22 +30,18 @@ export default async function LeaderboardPage() {
       <SiteHeader />
       <main className="relative mx-auto w-full max-w-5xl flex-1 px-5 pt-12 pb-24 sm:px-8">
         <div aria-hidden className="lab-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[30rem]" />
-        <p className="rise font-mono text-xs tracking-widest text-dev uppercase">Live rankings</p>
-        <h1 className="mt-3 font-display text-4xl font-semibold tracking-[-0.03em] sm:text-6xl">
-          <SplitText text="Fewest bugs" /> <SplitText text="wins." color="var(--color-pass)" offset={12} />
-        </h1>
-        <p className="rise mt-5 max-w-2xl text-lg text-graphite" style={{ ["--d" as string]: 4 }}>
-          Every site is ranked by the score of its latest QA shift. Fix your bugs, book a retest and climb.
-        </p>
+        <PageIntro
+          eyebrow="Live rankings"
+          title={
+            <>
+              <SplitText text="Fewest bugs" /> <SplitText text="wins." color="var(--color-pass)" offset={12} />
+            </>
+          }
+          description="Every site is ranked by the score of its latest QA shift. Fix your bugs, book a retest and climb."
+        />
 
         {entries.length === 0 ? (
-          <div className="glass rise mt-14 rounded-3xl p-10 text-center" style={{ ["--d" as string]: 5 }}>
-            <p className="font-display text-xl font-semibold">The board is empty. The first spot is yours.</p>
-            <p className="mt-2 text-graphite">Book a shift and tick &ldquo;List my site on the public leaderboard&rdquo;.</p>
-            <Link href="/hire" className="btn-primary mt-6 h-11">
-              Test my site
-            </Link>
-          </div>
+          <EmptyBoard />
         ) : (
           <>
             <Podium entries={podium} />
