@@ -588,6 +588,39 @@ html[data-stage="overview"] canvas[data-ready="true"] {
   content-visibility: visible;
 }
 
+/* ------------------------------------------------------------------ form fields (one look for every input site-wide) */
+
+.field-input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0.875rem;
+  border: 1px solid var(--color-rule);
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  padding: 0.75rem 1rem;
+  color: var(--color-ink);
+  outline: none;
+  transition:
+    border-color 200ms,
+    box-shadow 200ms,
+    background-color 200ms;
+}
+.field-input::placeholder {
+  color: color-mix(in srgb, var(--color-graphite) 70%, transparent);
+}
+.field-input:hover {
+  border-color: color-mix(in srgb, var(--color-graphite) 60%, transparent);
+}
+.field-input:focus-visible {
+  border-color: var(--color-dev);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-dev) 22%, transparent);
+}
+.field-input[aria-invalid="true"] {
+  border-color: var(--color-fail);
+}
+.field-input:disabled {
+  opacity: 0.6;
+}
+
 /* ------------------------------------------------------------------ reduced motion: everything still, nothing hidden */
 
 @media (prefers-reduced-motion: reduce) {
