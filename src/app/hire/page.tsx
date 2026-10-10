@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactElement } from "react";
 
+import { PageIntro } from "@/components/PageIntro";
 import { SiteHeader } from "@/components/SiteHeader";
 import { loadBetaPrices } from "@/lib/beta-orders";
 import { HOUR_OPTIONS, PLANS, TRIAL_MINUTES, type PlanId } from "@/lib/plans";
@@ -16,7 +18,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/hire" },
 };
 
-export default async function HirePage({ searchParams }: PageProps<"/hire">) {
+export default async function HirePage({ searchParams }: PageProps<"/hire">): Promise<ReactElement> {
   const prices = await loadBetaPrices();
   const { url, plan, hours } = await searchParams;
   // No plan is preselected unless a pricing link asked for one; customers choose it themselves.
@@ -27,12 +29,20 @@ export default async function HirePage({ searchParams }: PageProps<"/hire">) {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pt-10 pb-24 sm:px-8">
-        <h1 className="font-display text-4xl font-semibold tracking-[-0.03em]">Book a QA shift</h1>
-        <p className="mt-3 text-graphite">
-          Your first {TRIAL_MINUTES} minutes are free. Paid beta shifts are prepaid through Wise after email onboarding. No subscription or automatic card charges.
-        </p>
-        <p className="mt-4 text-sm text-graphite">Have source code or need checks on every push? <Link href="/github-agent" className="text-ink underline underline-offset-4">Explore GitHub testing and CI</Link>.</p>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pt-10 pb-24 sm:px-8 lg:max-w-5xl">
+        <PageIntro
+          eyebrow="Hourly AI QA"
+          title="Book a QA shift"
+          description={`Your first ${TRIAL_MINUTES} minutes are free. Paid beta shifts are prepaid through Wise after email onboarding. No subscription or automatic card charges.`}
+        >
+          <p className="mt-6 text-sm text-graphite">
+            Have source code or need checks on every push?{" "}
+            <Link href="/github-agent" className="text-ink underline underline-offset-4 hover:text-dev">
+              Explore GitHub testing and CI
+            </Link>
+            .
+          </p>
+        </PageIntro>
         <HireForm
           prices={prices}
           defaultUrl={typeof url === "string" ? url : ""}

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import type { ReactElement } from "react";
 
+import { PageIntro } from "@/components/PageIntro";
 import { SiteHeader } from "@/components/SiteHeader";
 import { testingMode } from "@/lib/repository-testing";
 
@@ -11,20 +13,17 @@ export const metadata: Metadata = {
   alternates: { canonical: "/custom" },
 };
 
-export default async function CustomPage({ searchParams }: PageProps<"/custom">) {
+export default async function CustomPage({ searchParams }: PageProps<"/custom">): Promise<ReactElement> {
   const mode = testingMode((await searchParams).mode);
   return (
     <>
       <SiteHeader />
       <main className="mx-auto w-full max-w-2xl flex-1 px-5 pt-10 pb-24 sm:px-8">
-        <p className="font-mono text-xs tracking-widest text-graphite uppercase">Custom pricing</p>
-        <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-balance">
-          Tell us what your release needs.
-        </h1>
-        <p className="mt-4 text-graphite">
-          Volume hours, recurring regression shifts, several sites or a dedicated agent team. Describe it and we&apos;ll
-          reply with a quote.
-        </p>
+        <PageIntro
+          eyebrow="Custom pricing"
+          title="Tell us what your release needs."
+          description="Volume hours, recurring regression shifts, several sites or a dedicated agent team. Describe it and we'll reply with a quote."
+        />
         <CustomForm defaultMode={mode} />
       </main>
     </>
