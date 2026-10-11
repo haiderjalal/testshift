@@ -7,7 +7,7 @@ import { observationsOf, ruleCases, scanCases } from "@/lib/documents/rules";
 import { renderDocx } from "@/lib/documents/render-docx";
 import { renderDocumentHtml } from "@/lib/documents/render-html";
 import { appUrl, sendEmail } from "@/lib/email";
-import { errorMessage, log } from "@/lib/log";
+import { describeFailure, log } from "@/lib/log";
 
 import { accessibilityAudit, crawlSite } from "./browser";
 import { renderPdf } from "./document-pdf";
@@ -27,7 +27,12 @@ const MAX_URL_CHARS = 2_000;
 const BLOCKED_STATUSES = [401, 403, 429];
 
 /** A failure whose message is written for the person who asked, so it may be shown on their page. */
-export class DocumentError extends Error {}
+export class DocumentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DocumentError";
+  }
+}
 
 export interface DocumentJob {
   id: string;
@@ -139,7 +144,7 @@ async function draftAll(input: {
         break;
       }
       if (e instanceof LeaseLostError) throw e;
-      log("error", "Scenario batch failed", { documentId: input.job.id, error: errorMessage(e) });
+      log("error", `Scenario batch failed: ${describeFailure(e)}`, { documentId: input.job.id });
     }
   }
   return { cases, batches, stopped };
@@ -183,7 +188,7 @@ async function notify(job: DocumentJob, total: number): Promise<void> {
       text: `We wrote ${total} test cases for ${job.host}.\n\nDownload them as a PDF or a Word file:\n${appUrl()}/test-cases/${job.id}\n\nThe document lists its scope and limits. Review the AI-drafted scenarios before you rely on them.`,
     });
   } catch (e) {
-    log("warn", "Document notification failed", { documentId: job.id, error: errorMessage(e) });
+    log("warn", `Document notification failed: ${describeFailure(e)}`, { documentId: job.id });
   }
 }
 
@@ -207,7 +212,7 @@ export async function runDocumentJob(job: DocumentJob, browser: Browser, options
   } catch (e) {
     // The crawler throws when the start address cannot be reached at all (for example, the name does not resolve).
     if (e instanceof LeaseLostError) throw e;
-    log("warn", "The crawl could not start on the site", { documentId: job.id, error: errorMessage(e) });
+    log("warn", `The crawl could not start on the site: ${describeFailure(e)}`, { documentId: job.id });
     throw unreadable;
   }
   const loaded = pages.filter((page) => page.status >= 200 && page.status < 400);
@@ -268,7 +273,7 @@ export async function processDocumentRequest(): Promise<boolean> {
           void browser?.close().catch(() => undefined);
         }
       })
-      .catch((e) => log("warn", "Document heartbeat failed", { documentId: job.id, error: errorMessage(e) }));
+      .catch((e) => log("warn", `Document heartbeat failed: ${describeFailure(e)}`, { documentId: job.id }));
   }, HEARTBEAT_MS);
 
   try {
@@ -282,11 +287,11 @@ export async function processDocumentRequest(): Promise<boolean> {
       return true;
     }
     const message = e instanceof DocumentError ? e.message : "We could not finish this document. Please request it again.";
-    log("error", "Test case document failed", { documentId: job.id, error: errorMessage(e) });
+    log("error", `Test case document failed: ${describeFailure(e)}`, { documentId: job.id });
     await db()`
       update test_documents set status = 'failed', activity = null, error = ${message}, completed_at = now()
       where id = ${job.id} and claim_token = ${job.claimToken}`.catch((err) =>
-      log("error", "Could not mark document failed", { documentId: job.id, error: errorMessage(err) }),
+      log("error", `Could not mark document failed: ${describeFailure(err)}`, { documentId: job.id }),
     );
   } finally {
     clearInterval(heartbeat);
