@@ -10,6 +10,8 @@ Current hardening results and release limitations: [QA audit](docs/QA_AUDIT.md).
 
 Current beta billing: [Wise onboarding and 10× hourly pricing](docs/BETA_BILLING.md). Stripe is parked. Paid orders require manual payment confirmation and a separate admin start.
 
+Test case documents (a site's link in, a PDF or Word file of test cases out): [docs/TEST_CASE_DOCUMENTS.md](docs/TEST_CASE_DOCUMENTS.md). It needs the `20261023000000_test_documents.sql` migration and a `npm run documents:worker` process.
+
 Owner dashboard: set `ADMIN_PASSWORD` in `.env.local`, then open `/admin` to track Claude token usage, cost and margin.
 
 ## Stack
