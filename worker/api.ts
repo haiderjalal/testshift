@@ -3,6 +3,8 @@ import { listTemplateFor, valueFromListResponse } from "@/lib/api/chain";
 import { exampleBody } from "@/lib/api/examples";
 import { listOperations, MISSING_EXAMPLE_REASON, type ApiOperation, type JsonObject } from "@/lib/api/openapi";
 import type { PostmanEndpoint } from "@/lib/api/postman";
+import { probeCheck, probesFor, type Probe, type ProbeOutcome } from "@/lib/api/probes";
+import { browserFindings, lintSpec, MAX_FINDINGS, type SpecFinding } from "@/lib/api/review";
 import { normalizeSpec, parseSpecText } from "@/lib/api/spec";
 import { errorMessage, log } from "@/lib/log";
 import { type HttpResponse, type RequestMethod, sendRequest } from "@/lib/outbound";
@@ -26,6 +28,8 @@ const MAX_OPERATIONS = 60;
 const MAX_WRITES = 20;
 /** Requests per read-only operation. The first also checks correctness; all of them feed the latency numbers. */
 const SAMPLES_PER_OPERATION = 3;
+/** Malformed-input requests per shift, all of them reads. They only use the time the other checks leave. */
+const MAX_PROBES_PER_SHIFT = 150;
 
 /** How every request leaves this module. Production uses the checked sender; tests inject their own. */
 export type Transport = (url: URL, init: { method: RequestMethod; body?: string; timeoutMs: number }) => Promise<HttpResponse>;
@@ -36,6 +40,8 @@ export interface ApiRunOptions {
   /** Set by the test environment check. Writes never run unless this is true. */
   writesEnabled: boolean;
   transport?: Transport;
+  /** Requests the page made in the browser, already reduced to "METHOD /path" by observedApiCall. */
+  observedCalls?: string[];
 }
 
 export interface ApiRow {
@@ -56,8 +62,10 @@ export interface ApiRow {
 export interface ApiRunResult {
   specUrl: string | null;
   rows: ApiRow[];
-  /** Latency across every read the API phase took. Writes are not counted. Null when no read was sent. */
+  /** Latency across every read the API phase took. Writes and probes are not counted. Null when no read was sent. */
   latency: LatencySummary | null;
+  /** The description review and the browser comparison. They do not change any operation's verdict. */
+  findings: SpecFinding[];
 }
 
 const remaining = (until: number): number => Math.max(1, Math.min(REQUEST_TIMEOUT_MS, until - Date.now()));
@@ -90,13 +98,17 @@ export function collectionOperation(endpoint: PostmanEndpoint): ApiOperation {
   const op: ApiOperation = {
     method: endpoint.method,
     template: endpoint.path,
+    basePath: "",
     requestPath: endpoint.path,
+    parameters: [],
     successStatuses: [],
     responseSchema: null,
     blockedReason: null,
     missingPathParams: [],
     isWrite: endpoint.method !== "GET" && endpoint.method !== "HEAD",
     bodySchema: null,
+    // A collection request's headers are never stored, so whether it needs credentials is unknown: it is not claimed.
+    requiresAuth: false,
   };
   fromCollection.add(op);
   return op;
@@ -133,7 +145,16 @@ function parseJson(body: string): unknown {
   }
 }
 
-/** Sends one operation and grades the response. Reads are sampled for latency; writes are sent once. */
+/** Adds a check to a row that was sent, and recomputes its verdict. */
+function withCheck(row: ApiRow, check: ApiCheck): ApiRow {
+  const checks = [...row.checks, check];
+  return { ...row, checks, passed: checks.every((c) => c.passed), severity: worstSeverity(checks) };
+}
+
+/**
+ * Sends one operation and grades the response. Reads are sampled for latency; writes are sent once. Only the request
+ * itself is inside the error handler: a bug in grading must never be reported as an unreachable site.
+ */
 async function sendOperation(
   op: ApiOperation,
   url: URL,
@@ -144,33 +165,9 @@ async function sendOperation(
   sample: boolean,
 ): Promise<OperationResult> {
   const method = op.method as RequestMethod;
+  let response: HttpResponse;
   try {
-    const response = await transport(url, { method, body, timeoutMs: remaining(until) });
-    const samples = [response.latencyMs];
-    // Extra samples only while time remains: they make the latency numbers meaningful, not the verdict.
-    for (let i = 1; sample && i < SAMPLES_PER_OPERATION && Date.now() < until; i++) {
-      const extra = await transport(url, { method, timeoutMs: remaining(until) }).catch(() => null);
-      if (extra) samples.push(extra.latencyMs);
-    }
-    const evaluated = evaluateResponse(op, response);
-    const checks = fromCollection.has(op) ? softenCollectionClientError(evaluated, response.status) : evaluated;
-    return {
-      samples: sample ? samples : [],
-      raw: response.truncated ? undefined : response.body,
-      body: method === "GET" && response.status >= 200 && response.status < 300 && !response.truncated ? parseJson(response.body) : undefined,
-      row: {
-        method: op.method,
-        path: url.pathname + url.search,
-        statusCode: response.status,
-        latencyMs: Math.round(percentile(samples, 50)),
-        latencyP95Ms: Math.round(percentile(samples, 95)),
-        skippedReason: null,
-        passed: checks.every((c) => c.passed),
-        severity: worstSeverity(checks),
-        checks,
-        chainedFrom,
-      },
-    };
+    response = await transport(url, { method, body, timeoutMs: remaining(until) });
   } catch (e) {
     log("warn", "API request failed", { method: op.method, error: errorMessage(e) });
     // The customer sees a fixed message: connection errors can carry internal addresses.
@@ -180,6 +177,32 @@ async function sendOperation(
       row: { method: op.method, path: url.pathname + url.search, statusCode: null, latencyMs: null, latencyP95Ms: null, skippedReason: null, passed: false, severity: "major", checks: [check], chainedFrom },
     };
   }
+
+  const samples = [response.latencyMs];
+  // Extra samples only while time remains: they make the latency numbers meaningful, not the verdict.
+  for (let i = 1; sample && i < SAMPLES_PER_OPERATION && Date.now() < until; i++) {
+    const extra = await transport(url, { method, timeoutMs: remaining(until) }).catch(() => null);
+    if (extra) samples.push(extra.latencyMs);
+  }
+  const evaluated = evaluateResponse(op, response);
+  const checks = fromCollection.has(op) ? softenCollectionClientError(evaluated, response.status) : evaluated;
+  return {
+    samples: sample ? samples : [],
+    raw: response.truncated ? undefined : response.body,
+    body: method === "GET" && response.status >= 200 && response.status < 300 && !response.truncated ? parseJson(response.body) : undefined,
+    row: {
+      method: op.method,
+      path: url.pathname + url.search,
+      statusCode: response.status,
+      latencyMs: Math.round(percentile(samples, 50)),
+      latencyP95Ms: Math.round(percentile(samples, 95)),
+      skippedReason: null,
+      passed: checks.every((c) => c.passed),
+      severity: worstSeverity(checks),
+      checks,
+      chainedFrom,
+    },
+  };
 }
 
 async function testOperation(op: ApiOperation, origin: URL, until: number, transport: Transport): Promise<OperationResult> {
@@ -197,12 +220,20 @@ export function chainOperation(op: ApiOperation, bodies: Map<string, unknown>): 
   // The only blocking reason chaining can resolve is the missing example itself.
   if (op.blockedReason !== null && !op.blockedReason.startsWith(MISSING_EXAMPLE_REASON)) return null;
   const [param] = op.missingPathParams;
+  // Another required parameter without an example still blocks the operation, whatever the list returns.
+  if (op.parameters.some((p) => p.required && p.example === null && !(p.in === "path" && p.name === param))) return null;
   const listTemplate = listTemplateFor(op.template, param);
   if (!listTemplate || !bodies.has(listTemplate)) return null;
   const value = valueFromListResponse(bodies.get(listTemplate), param);
   if (!value) return null;
   return {
-    op: { ...op, requestPath: op.requestPath.replace(`{${param}}`, encodeURIComponent(value)), missingPathParams: [], blockedReason: null },
+    op: {
+      ...op,
+      requestPath: op.requestPath.replace(`{${param}}`, encodeURIComponent(value)),
+      parameters: op.parameters.map((p) => (p.in === "path" && p.name === param ? { ...p, example: value } : p)),
+      missingPathParams: [],
+      blockedReason: null,
+    },
     from: `GET ${listTemplate}`,
   };
 }
@@ -227,13 +258,33 @@ function dedupe(operations: ApiOperation[]): ApiOperation[] {
   });
 }
 
+/** One malformed request. Only an answer counts: a timeout says nothing about the server, so it counts for neither side. */
+async function sendProbe(origin: URL, probe: Probe, until: number, transport: Transport): Promise<ProbeOutcome> {
+  try {
+    const response = await transport(new URL(probe.target, origin), { method: "GET", timeoutMs: remaining(until) });
+    return { probe, status: response.status };
+  } catch {
+    return { probe, status: null };
+  }
+}
+
+/** The spec review and the browser comparison. They are advice, so a failure here is logged and never costs the checks. */
+function reviewFindings(spec: JsonObject | null, observed: string[], origin: URL): SpecFinding[] {
+  try {
+    return [...(spec ? lintSpec(spec, origin) : []), ...browserFindings(observed, spec, origin)].slice(0, MAX_FINDINGS);
+  } catch (e) {
+    log("error", "API spec review failed", { error: errorMessage(e) });
+    return [];
+  }
+}
+
 /**
  * Tests the site's documented operations plus any requests from the customer's collection, within the time budget.
  *
  * Reads run first, then chained details. Writes run only when the test environment allows them, and only on records
  * this shift created: a create (POST) returns an id, and later updates and deletes use that id. Writes need the
- * request body the API description gives as an example. Anything not sent is recorded as skipped with its reason,
- * never as a pass, and records left behind are reported.
+ * request body the API description gives as an example. Malformed-input probes run last, on the time left over.
+ * Anything not sent is recorded as skipped with its reason, never as a pass, and records left behind are reported.
  */
 export async function runApiChecks(origin: URL, until: number, collection: PostmanEndpoint[] = [], options: ApiRunOptions = { writesEnabled: false }): Promise<ApiRunResult> {
   // One guard for every caller: a spec server, a path like "//evil.com/x" or an absolute key can resolve off the
@@ -244,14 +295,17 @@ export async function runApiChecks(origin: URL, until: number, collection: Postm
     return base(url, init);
   };
   const found = await discoverSpec(origin, until, transport);
+  const findings = reviewFindings(found?.spec ?? null, options.observedCalls ?? [], origin);
   const operations = dedupe([...(found ? listOperations(found.spec, origin) : []), ...collection.map(collectionOperation)]);
-  if (operations.length === 0) return { specUrl: found?.url ?? null, rows: [], latency: null };
+  if (operations.length === 0) return { specUrl: found?.url ?? null, rows: [], latency: null, findings };
 
   const limited = operations.slice(0, MAX_OPERATIONS);
   const rows: (ApiRow | undefined)[] = new Array(limited.length);
   const samples: number[] = [];
   const bodies = new Map<string, unknown>();
   const created = new Map<string, string[]>();
+  // Reads that got an answer; their malformed-input probes run after the writes.
+  const probeTargets: { index: number; op: ApiOperation }[] = [];
   let writes = 0;
 
   // Pass 1: reads that need nothing else. List endpoints run here, so details can use them.
@@ -261,6 +315,7 @@ export async function runApiChecks(origin: URL, until: number, collection: Postm
     rows[index] = result.row;
     samples.push(...result.samples);
     if (result.body !== undefined) bodies.set(op.template, result.body);
+    if (result.row.statusCode !== null && op.method === "GET") probeTargets.push({ index, op });
   }
   // Pass 2: reads whose path parameter comes from an earlier list response.
   for (const [index, op] of limited.entries()) {
@@ -273,6 +328,7 @@ export async function runApiChecks(origin: URL, until: number, collection: Postm
     const result = await sendOperation(chained.op, new URL(chained.op.requestPath, origin), until, transport, undefined, chained.from, true);
     rows[index] = result.row;
     samples.push(...result.samples);
+    if (result.row.statusCode !== null) probeTargets.push({ index, op: chained.op });
   }
   // Pass 3: writes, creates first, then updates, then deletes, so each has the records it needs.
   for (const phase of [["POST"], ["PUT", "PATCH"], ["DELETE"]]) {
@@ -280,6 +336,20 @@ export async function runApiChecks(origin: URL, until: number, collection: Postm
       if (!op.isWrite || !phase.includes(op.method)) continue;
       rows[index] = await runWrite(op, origin, until, transport, options.writesEnabled, created, () => writes++ < MAX_WRITES);
     }
+  }
+  // Pass 4: malformed-input probes. They only use the time the reads and writes left, so coverage is never traded for them.
+  let probesLeft = MAX_PROBES_PER_SHIFT;
+  for (const { index, op } of probeTargets) {
+    if (probesLeft <= 0 || Date.now() >= until) break;
+    const outcomes: ProbeOutcome[] = [];
+    for (const probe of probesFor(op).slice(0, probesLeft)) {
+      if (Date.now() >= until) break;
+      outcomes.push(await sendProbe(origin, probe, until, transport));
+    }
+    probesLeft -= outcomes.length;
+    const check = probeCheck(outcomes);
+    const row = rows[index];
+    if (check && row) rows[index] = withCheck(row, check);
   }
 
   const extra: ApiRow[] = [];
@@ -293,6 +363,7 @@ export async function runApiChecks(origin: URL, until: number, collection: Postm
     specUrl: found?.url ?? null,
     rows: [...(rows as ApiRow[]), ...extra, ...overflow],
     latency: summarizeLatency(samples),
+    findings,
   };
 }
 

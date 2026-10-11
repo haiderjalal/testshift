@@ -3,6 +3,7 @@ import { databaseTls } from "./security";
 
 import type { AgentId } from "./agents";
 import type { PostmanEndpoint } from "./api/postman";
+import type { SpecFinding } from "./api/review";
 import type { LatencySummary } from "./performance";
 import type { PlanId } from "./plans";
 
@@ -43,6 +44,8 @@ export interface SitePage {
   loadMs: number;
   outline: string;
   issues: string[];
+  /** Same-origin fetch and XHR calls the page made while loading, as "METHOD /path". Absent on older maps. */
+  apiCalls?: string[];
 }
 
 /** The shift's test strategy: the site's features ranked by risk, written once and shared by all four agents. */
@@ -90,6 +93,8 @@ export interface Run {
   requirements?: string | null;
   /** Sanitised Postman endpoints (method and path only) the customer supplied. */
   api_collection?: PostmanEndpoint[] | null;
+  /** The spec review and the browser comparison for the API phase. */
+  api_findings?: SpecFinding[] | null;
 }
 
 export const BROWSER_ACTIONS = [

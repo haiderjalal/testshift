@@ -90,11 +90,13 @@ function swagger2ToOpenApi(doc: JsonObject): JsonObject {
     openapi: "3.0.0",
     info: isObject(doc.info) ? doc.info : {},
     servers,
+    ...(Array.isArray(doc.security) ? { security: doc.security } : {}),
     paths,
     components: {
       schemas: isObject(doc.definitions) ? doc.definitions : {},
       parameters: isObject(doc.parameters) ? doc.parameters : {},
       responses: isObject(doc.responses) ? doc.responses : {},
+      securitySchemes: isObject(doc.securityDefinitions) ? doc.securityDefinitions : {},
     },
   });
 }
@@ -138,6 +140,7 @@ function convertOperation(operation: JsonObject, sharedParams: unknown[]): JsonO
 
   return {
     ...(requestBody ? { requestBody } : {}),
+    ...(Array.isArray(operation.security) ? { security: operation.security } : {}),
     parameters,
     responses,
   };
