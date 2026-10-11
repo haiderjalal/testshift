@@ -10,7 +10,7 @@ test("failures are described by our own setup message or a database error code, 
   assert.match(describeFailure(missingTable), /migrations are applied/);
   assert.equal(describeFailure(Object.assign(new Error("password authentication failed"), { code: "28P01" })), "error code 28P01");
   // A driver message can contain a connection string, so it is never copied into a log.
-  assert.equal(describeFailure(new Error("connect postgres://user:secret@db.example.com failed")), "Error");
+  assert.equal(describeFailure(new Error("connect postgres://postgres:postgres@127.0.0.1:5432/postgres failed")), "Error");
   assert.equal(describeFailure("not an error"), "UnknownError");
 });
 
