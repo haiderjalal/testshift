@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Admin", robots: { index: false, foll
 const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = (n: number) => Math.round(n).toLocaleString("en-US");
 const label = (key: string) =>
-  Object.hasOwn(MODELS, key) ? MODELS[key as ModelId].label : (AGENT_IDS as string[]).includes(key) ? agentById(key as AgentId).name : key === "report" ? "Report writer" : key;
+  Object.hasOwn(MODELS, key) ? MODELS[key as ModelId].label : (AGENT_IDS as string[]).includes(key) ? agentById(key as AgentId).name : key === "report" ? "Report writer" : key === "documents" ? "Test case documents" : key;
 
 function UsageTable({ title, rows, keyHeading }: { title: string; rows: UsageRow[]; keyHeading: string }) {
   return (
