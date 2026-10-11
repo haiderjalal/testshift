@@ -6,7 +6,7 @@ import { featureOf } from "@/lib/documents/rules";
 import { acceptScenarioCases, MAX_AI_CASES_PER_BATCH, SCENARIO_SYSTEM, scenarioPrompt, ScenarioOutput } from "@/lib/documents/scenarios";
 import type { DocumentCase } from "@/lib/documents/model";
 import type { SitePage } from "@/lib/db";
-import { errorMessage, log } from "@/lib/log";
+import { describeFailure, log } from "@/lib/log";
 import { type ModelId, tokenCost } from "@/lib/plans";
 
 import type { AiBudget } from "./budget";
@@ -26,7 +26,7 @@ async function recordUsage(documentId: string, usage: { input: number; output: n
       insert into ai_usage (document_id, purpose, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
       values (${documentId}, 'document', ${DOCUMENT_MODEL}, ${usage.input}, ${usage.output}, ${usage.cacheRead}, ${written}, ${cost})`;
   } catch (e) {
-    log("error", "Could not record document token usage", { documentId, error: errorMessage(e) });
+    log("error", `Could not record document token usage: ${describeFailure(e)}`, { documentId });
   }
 }
 

@@ -30,6 +30,25 @@ export async function launchEngine(engine: EngineId, proxyServer: string): Promi
   return browser;
 }
 
+const CHROMIUM_NOT_STARTING =
+  "Chromium cannot start on this worker. Install it with `npx.cmd playwright install chromium` in PowerShell, or `npx playwright install --with-deps chromium` on Linux.";
+
+/**
+ * Whether this worker can start Chromium, as a message an operator can act on, or null when it can. A missing browser
+ * fails every launch, so the worker checks once at startup instead of failing each document as it is claimed.
+ */
+export async function browserProblem(launch: () => Promise<Browser> = () => chromium.launch()): Promise<string | null> {
+  let browser: Browser;
+  try {
+    browser = await launch();
+  } catch {
+    // The launch error is not copied into the log: driver messages stay out of logs, and the install step is what fixes it.
+    return CHROMIUM_NOT_STARTING;
+  }
+  await browser.close();
+  return null;
+}
+
 /**
  * Engines beyond Chromium, from QA_ENGINES (for example "chromium,webkit"). Off by default: an operator turns
  * one on only after scripts/check-engines.ts passes on the machine that runs the worker.
