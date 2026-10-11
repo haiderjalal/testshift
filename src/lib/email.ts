@@ -24,7 +24,13 @@ export async function sendEmail({ to, subject, text, replyTo }: Email): Promise<
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   // Logs carry a kind, never the subject: subjects can contain customers' names.
-  const kind = subject.startsWith("Your QA report") ? "report" : subject.startsWith("New custom pricing") ? "quote" : "booking";
+  const kind = subject.startsWith("Your QA report")
+    ? "report"
+    : subject.startsWith("New custom pricing")
+      ? "quote"
+      : subject.startsWith("Your test cases")
+        ? "documents"
+        : "booking";
   if (!key || !from) {
     log("warn", "Email not configured (RESEND_API_KEY / EMAIL_FROM); skipping", { kind });
     return false;

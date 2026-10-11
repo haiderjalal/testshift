@@ -1,18 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
-import { useEffect } from "react";
 
-/** Re-renders the server page every few seconds while a shift is live. */
-export function AutoRefresh({ everyMs = 5_000 }: { everyMs?: number }): null {
-  const router = useRouter();
-  useEffect(() => {
-    const timer = setInterval(() => router.refresh(), everyMs);
-    return () => clearInterval(timer);
-  }, [router, everyMs]);
-  return null;
-}
+export { AutoRefresh } from "@/components/AutoRefresh";
 
 /** Secondary action beside the report's download link, sized to the same 44px touch target. */
 export function PrintButton(): ReactElement {

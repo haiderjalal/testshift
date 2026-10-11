@@ -665,13 +665,14 @@ export async function accessibilityAudit(
         await assertReadable(page);
         // page.evaluate is not subject to the site's CSP, unlike injecting a <script> tag.
         await page.evaluate(axe.source);
-        const violations = await page.evaluate(async () => {
+        // The tags are passed in: a function sent to the page cannot see this module's constants.
+        const violations = await page.evaluate(async (tags: string[]) => {
           const report = await window.axe.run(document, {
-            runOnly: { type: "tag", values: WCAG_TAGS },
+            runOnly: { type: "tag", values: tags },
             resultTypes: ["violations"],
           });
           return report.violations.map((v) => ({ id: v.id, impact: v.impact ?? null, help: v.help, count: v.nodes.length }));
-        });
+        }, WCAG_TAGS);
         const keyboard = await keyboardFocusProblems(page);
         results.push({ url, violations: [...violations, ...keyboard] });
       } catch (e) {

@@ -9,6 +9,7 @@ const SECTION_LINKS: readonly SiteLink[] = [
   { href: "/#pricing", label: "Pricing" },
   { href: "/#faq", label: "FAQ" },
   { href: "/github-agent", label: "GitHub & CI" },
+  { href: "/test-cases", label: "Test cases" },
 ];
 
 export function SiteHeader({ showNav = true }: { showNav?: boolean }) {

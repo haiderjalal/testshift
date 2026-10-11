@@ -76,7 +76,7 @@ export async function loadDashboard(period: Period) {
     sql<TokenTotals[]>`select ${totals()} from ai_usage where created_at >= ${from}`,
     sql<UsageRow[]>`select model as key, ${totals()} from ai_usage where created_at >= ${from} group by model order by cost desc`,
     sql<UsageRow[]>`
-      select coalesce(agent, 'report') as key, ${totals()} from ai_usage where created_at >= ${from}
+      select coalesce(agent, case when purpose = 'document' then 'documents' else 'report' end) as key, ${totals()} from ai_usage where created_at >= ${from}
       group by 1 order by cost desc`,
     sql<UsageRow[]>`
       select to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as key, ${totals()} from ai_usage

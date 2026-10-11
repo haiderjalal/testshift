@@ -4,6 +4,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { digest, sealToken } from "../src/lib/github/crypto";
+import { seedDocumentFixtures } from "./documents.fixture";
 
 async function main() {
   const db = await PGlite.create();
@@ -18,6 +19,7 @@ async function main() {
   const socket = new PGLiteSocketServer({ db, port: 0, host: "127.0.0.1", maxConnections: 10 });
   await db.exec("insert into runs (id,url,email,plan,minutes,status) values ('33333333-3333-4333-8333-333333333333','https://8.8.4.4/','other-fixture@example.com','junior',60,'completed')");
   await db.exec("insert into test_cases (id,run_id,seq,title,category,priority,start_url,steps,expected,status,screenshot) values ('44444444-4444-4444-8444-444444444444','33333333-3333-4333-8333-333333333333',1,'Screenshot fixture','smoke','low','https://8.8.4.4/','[]','Fixture','blocked',decode('ffd8ffd9','hex'))");
+  await seedDocumentFixtures(db);
   await socket.start();
   await db.exec("insert into github_users (id,login) values (901,'fixture-owner'),(902,'fixture-other')");
   for (const identity of [901, 902, 903, 904]) {
