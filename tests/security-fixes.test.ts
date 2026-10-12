@@ -25,8 +25,8 @@ test("normalizeSpec refuses a spec over the node budget", () => {
 test("response-schema validation ignores a catastrophic regex pattern instead of running it", () => {
   const schema = { type: "object", properties: { s: { type: "string", pattern: "^(a+)+$" } }, components: {} };
   const op: ApiOperation = {
-    method: "GET", template: "/x", requestPath: "/x", successStatuses: ["200"], responseSchema: schema,
-    blockedReason: null, missingPathParams: [], isWrite: false, bodySchema: null,
+    method: "GET", template: "/x", basePath: "", requestPath: "/x", parameters: [], successStatuses: ["200"], responseSchema: schema,
+    blockedReason: null, missingPathParams: [], isWrite: false, bodySchema: null, requiresAuth: false,
   };
   const evil = "a".repeat(40) + "!";
   const res: HttpResponse = { status: 200, contentType: "application/json", body: JSON.stringify({ s: evil }), latencyMs: 1, truncated: false, headers: {} };

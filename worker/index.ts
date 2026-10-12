@@ -515,16 +515,21 @@ async function runPhase(
 
 /** The whole pipeline: map the site, then Dev → Staging → UAT → Prod, each in its share of the shift. */
 /** Tests the site's documented read-only API. Stored once per shift; a resumed shift skips it. */
-async function runApiPhase(run: Run, stopAt: number): Promise<void> {
+async function runApiPhase(run: Run, stopAt: number, pages: SitePage[]): Promise<void> {
   const [{ done }] = await db()<{ done: boolean }[]>`select exists (select 1 from api_checks where run_id = ${run.id}) as done`;
   if (done) return;
   await setActivity(run.id, "staging", "Staging agent · API checks");
   const until = Date.now() + Math.max(0, stopAt - Date.now()) * API_SHARE;
   // Writes need an approved test environment and a verified domain. The gate is checked here, not assumed.
   const writeGate = await checkTestEnvironment(run.url, "writes", emailKey(run.email));
-  const { specUrl, rows, latency } = await runApiChecks(new URL(run.url), until, run.api_collection ?? [], { writesEnabled: writeGate.ok });
+  // Calls the pages made while the crawl loaded them, so the description can be compared with what the site really uses.
+  const observedCalls = [...new Set(pages.flatMap((page) => page.apiCalls ?? []))];
+  const { specUrl, rows, latency, findings } = await runApiChecks(new URL(run.url), until, run.api_collection ?? [], {
+    writesEnabled: writeGate.ok,
+    observedCalls,
+  });
   await withRunLease(run.id, lease.token, async (sql) => {
-    await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null} where id = ${run.id}`;
+    await sql`update runs set api_spec_url = ${specUrl}, api_latency = ${latency ? json(latency) : null}, api_findings = ${json(findings as unknown as object)} where id = ${run.id}`;
     for (const row of rows) {
       await sql`insert into api_checks (run_id, method, path, status_code, latency_ms, latency_p95_ms, skipped_reason, passed, severity, checks, chained_from)
         values (${run.id}, ${row.method}, ${row.path}, ${row.statusCode}, ${row.latencyMs}, ${row.latencyP95Ms}, ${row.skippedReason}, ${row.passed}, ${row.severity}, ${json(row.checks as unknown as object)}, ${row.chainedFrom})`;
@@ -558,7 +563,7 @@ async function runShift(run: Run, browser: Browser, stopAt: number, engines: Map
   }
   // API checks run before the browser agents, so their time comes out of the agents' share, not on top of it.
   try {
-    await runApiPhase(run, stopAt);
+    await runApiPhase(run, stopAt, pages);
   } catch (e) {
     if (e instanceof LeaseLostError) throw e;
     log("error", "API phase failed", { runId: run.id, error: errorMessage(e) });

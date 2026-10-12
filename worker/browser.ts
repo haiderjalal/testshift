@@ -1,6 +1,7 @@
 import axe from "axe-core";
 import { devices, type Browser, type BrowserContext, type Page } from "playwright";
 
+import { observedApiCall } from "@/lib/api/review";
 import type { CompatibilityResult, EngineId, EngineOutcome } from "@/lib/compat";
 import type { BrowserAction, SitePage } from "@/lib/db";
 import { MAX_PAGE_HEIGHT } from "@/lib/visual";
@@ -18,6 +19,8 @@ declare global {
 // can't resolve public once and stay allowed forever (DNS rebinding).
 const HOST_CHECK_TTL_MS = 30_000;
 const hostChecks = new Map<string, { at: number; check: Promise<boolean> }>();
+/** Distinct API calls kept per page. A page that calls more than this is summarised by the first calls it made. */
+const MAX_OBSERVED_CALLS = 60;
 
 function hostAllowed(hostname: string): Promise<boolean> {
   const cached = hostChecks.get(hostname);
@@ -177,9 +180,11 @@ export const THIRD_PARTY = "[third-party] ";
  * Requests the tester itself blocked (private or unresolvable hosts, off-site navigation) are not the site's
  * fault and are left out; failures on other companies' domains are tagged THIRD_PARTY.
  */
-export function watchPage(page: Page, siteUrl: string): { drain: () => string[] } {
+export function watchPage(page: Page, siteUrl: string): { drain: () => string[]; drainApiCalls: () => string[] } {
   const site = siteKey(new URL(siteUrl).hostname);
+  const origin = new URL(siteUrl);
   const events: string[] = [];
+  const apiCalls: string[] = [];
   const add = (event: string) => { if (events.length < 100 && !events.includes(event)) events.push(event); };
   const tag = (url: string) => {
     try {
@@ -203,7 +208,13 @@ export function watchPage(page: Page, siteUrl: string): { drain: () => string[] 
     if (reason === "net::ERR_ABORTED" || reason.startsWith("net::ERR_BLOCKED_BY_CLIENT")) return;
     add(`${tag(r.url())}request failed (${reason}): ${r.url().slice(0, 200)}`);
   });
-  return { drain: () => events.splice(0) };
+  // Only what the page's own scripts asked for counts as an API call; documents, images and styles do not.
+  page.on("request", (r) => {
+    if (r.resourceType() !== "fetch" && r.resourceType() !== "xhr") return;
+    const call = observedApiCall(r.method(), r.url(), origin);
+    if (call && apiCalls.length < MAX_OBSERVED_CALLS && !apiCalls.includes(call)) apiCalls.push(call);
+  });
+  return { drain: () => events.splice(0), drainApiCalls: () => apiCalls.splice(0) };
 }
 
 /** Splits collected events into the site's own problems and third-party noise. */
@@ -372,21 +383,22 @@ export async function crawlSite(
   const context = await openContext(browser, "desktop", startUrl);
   const deadline = closeAt(context, until);
   const page = await context.newPage();
-  const { drain } = watchPage(page, startUrl);
+  const { drain, drainApiCalls } = watchPage(page, startUrl);
 
   try {
     for (let url = queue.shift(); url && pages.length < maxPages && Date.now() < until; url = queue.shift()) {
       drain();
+      drainApiCalls();
       const { status, loadMs, issues } = await visit(page, url);
       try {
         await assertReadable(page);
       } catch (e) {
         if (!(e instanceof PrivateNetworkError)) throw e;
-        pages.push({ url, title: "", status, loadMs, outline: "", issues: [e.message] });
+        pages.push({ url, title: "", status, loadMs, outline: "", issues: [e.message], apiCalls: [] });
         break;
       }
       if (status === 0 || [401, 403, 429].includes(status)) {
-        pages.push({ url, title: "", status, loadMs, outline: "", issues: [...issues, ...drain()] });
+        pages.push({ url, title: "", status, loadMs, outline: "", issues: [...issues, ...drain()], apiCalls: drainApiCalls() });
         continue;
       }
       const links = await page.$$eval("a[href]", (as) => as.slice(0, 500).map((a) => (a as HTMLAnchorElement).href)).catch(() => []);
@@ -405,6 +417,7 @@ export async function crawlSite(
         loadMs,
         outline,
         issues: [...issues, ...drain()],
+        apiCalls: drainApiCalls(),
       });
     }
   } finally {
