@@ -1,6 +1,8 @@
 import type { ReactElement } from "react";
 
-import type { ApiCheck, CheckSeverity } from "@/lib/api/checks";
+import { AUTH_CHECK, type ApiCheck, type CheckSeverity } from "@/lib/api/checks";
+import { PROBE_CHECK } from "@/lib/api/probes";
+import type { SpecFinding } from "@/lib/api/review";
 import { latencySeverity, type LatencySummary } from "@/lib/performance";
 
 import { ReportPill } from "./ReportPill";
@@ -19,19 +21,32 @@ export interface ApiCheckRow {
   checks: ApiCheck[];
 }
 
+interface ApiChecksProps {
+  runId: string;
+  rows: ApiCheckRow[];
+  specUrl: string | null;
+  latency: LatencySummary | null;
+  findings: SpecFinding[];
+}
+
 const SEVERITY_COLOR: Record<CheckSeverity, string> = {
   critical: "text-fail",
   major: "text-marker",
   minor: "text-hold",
 };
 
+/** Checks that passed and are worth a note in the table: they say what was ruled out, not just that nothing failed. */
+const NOTED_PASSES = [AUTH_CHECK, PROBE_CHECK];
+const SHOWN_FINDINGS = 25;
+
 const NOT_FOUND_NOTE =
   "No OpenAPI or Swagger description was found (JSON or YAML, at the usual paths), and no Postman requests were supplied, so no API endpoints were tested.";
 
-export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; specUrl: string | null; latency: LatencySummary | null }): ReactElement {
+export function ApiChecks({ runId, rows, specUrl, latency, findings }: ApiChecksProps): ReactElement {
   const tested = rows.filter((r) => r.passed !== null);
   const passed = tested.filter((r) => r.passed).length;
   const skipped = rows.length - tested.length;
+  const exportable = rows.filter((r) => r.passed === true && (r.method === "GET" || r.method === "HEAD")).length;
 
   return (
     <section aria-labelledby="api-heading" className="space-y-5">
@@ -55,6 +70,14 @@ export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; spe
             <span className="text-pass">{passed} passed</span> · <span className="text-fail">{tested.length - passed} failed</span> ·{" "}
             {skipped} skipped. Skipped operations were not sent: they change data, need an example value, or ran out of time. A skipped operation is not a pass.
           </p>
+          {exportable > 0 && (
+            <p className="text-sm text-graphite">
+              <a href={`/runs/${runId}/postman`} className="text-ink underline underline-offset-4 hover:text-dev">
+                Download the {exportable === 1 ? "passing request" : `${exportable} passing requests`} as a Postman collection
+              </a>
+              . Each request asserts the status and latency seen in this shift, so Postman or Newman can run it again.
+            </p>
+          )}
           {/* Scrolls sideways inside its own box on phones, so the page itself never overflows. */}
           <div className="glass overflow-x-auto rounded-2xl" tabIndex={0}>
             <table aria-labelledby="api-heading" className="w-full min-w-[40rem] border-collapse text-left text-sm">
@@ -100,6 +123,13 @@ export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; spe
                             ))}
                         </ul>
                       )}
+                      {row.checks
+                        .filter((c) => c.passed && NOTED_PASSES.includes(c.name))
+                        .map((c) => (
+                          <p key={c.name} className="mt-1.5 text-xs text-graphite">
+                            <span className="text-pass">✓</span> {c.name}: {c.detail}
+                          </p>
+                        ))}
                     </td>
                   </tr>
                 ))}
@@ -108,7 +138,39 @@ export function ApiChecks({ rows, specUrl, latency }: { rows: ApiCheckRow[]; spe
           </div>
         </>
       )}
+
+      {findings.length > 0 && <SpecReview findings={findings} />}
     </section>
+  );
+}
+
+function SpecReview({ findings }: { findings: SpecFinding[] }): ReactElement {
+  const warnings = findings.filter((f) => f.severity === "warning").length;
+  return (
+    <div className="space-y-4">
+      <h3 className="font-display text-lg font-semibold tracking-tight">Spec review</h3>
+      <p className="text-graphite">
+        {warnings} {warnings === 1 ? "warning" : "warnings"} · {findings.length - warnings} suggestions. These describe the API
+        documentation and the calls the page makes. They do not change any result above.
+      </p>
+      <ul className="glass divide-y divide-rule rounded-2xl">
+        {findings.slice(0, SHOWN_FINDINGS).map((finding, index) => (
+          <li key={`${finding.rule}-${index}`} className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-baseline sm:gap-4">
+            <span className={`shrink-0 text-xs font-medium ${finding.severity === "warning" ? "text-hold" : "text-graphite"}`}>
+              {finding.severity === "warning" ? "Warning" : "Suggestion"}
+              {finding.source === "browser" ? " · browser" : ""}
+            </span>
+            <div className="min-w-0">
+              <p>{finding.message}</p>
+              {finding.location && <p className="mt-1 font-mono text-xs break-all text-graphite">{finding.location}</p>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {findings.length > SHOWN_FINDINGS && (
+        <p className="text-sm text-graphite">{findings.length - SHOWN_FINDINGS} more findings are not shown.</p>
+      )}
+    </div>
   );
 }
 
