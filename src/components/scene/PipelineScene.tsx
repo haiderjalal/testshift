@@ -49,6 +49,10 @@ export function StageSync({ stage }: { stage: string | null }) {
     const root = document.documentElement;
     if (stage) root.dataset.stage = stage;
     else delete root.dataset.stage;
+    // Leaving the page clears the stage, or the scene would stay on this agent's shot on every page after it.
+    return () => {
+      delete root.dataset.stage;
+    };
   }, [stage]);
   return null;
 }

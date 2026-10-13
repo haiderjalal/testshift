@@ -579,6 +579,15 @@ html.js:not(.rm):not(.ready) .scrub-draw,
 html.js:not(.rm):not(.ready) .scrub-node {
   animation: failsafe-show 0s 4s forwards;
 }
+/* An odometer rests at zero until it reveals, so it needs its own failsafe: slide each digit to its real value. */
+html.js:not(.rm):not(.ready) [data-odo] .odo-col {
+  animation: failsafe-odo 0s 4s forwards;
+}
+@keyframes failsafe-odo {
+  to {
+    transform: translateY(calc(var(--digit) * -1em));
+  }
+}
 @keyframes failsafe-show {
   to {
     opacity: 1;
@@ -713,10 +722,11 @@ html.js:not(.rm) .scrub-node[data-lit] {
 /*
  * Pinned scenes. The wrapper is tall; the stage inside it sticks while the wrapper scrolls past, which is how a scene
  * is held on screen without any scroll-jacking. The story reads the wrapper's own geometry to get its progress.
- * [data-pin="lg"] pins only on large, tall screens, where the whole stage fits; everywhere else it reads as a normal section.
+ * A plain [data-pin] pins on any screen tall enough to hold its stage (a short landscape phone or a heavily zoomed window
+ * would clip it for the whole pin); [data-pin="lg"] pins only on large, tall screens. Elsewhere both read as a normal section.
  * Needs html.js (without JavaScript nothing would move, so there is nothing to hold on screen) and no reduced-motion request.
  */
-@media (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) and (min-height: 38rem) {
   html.js [data-pin]:not([data-pin="lg"]) {
     height: var(--pin-height, 300vh);
   }

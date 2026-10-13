@@ -21,6 +21,8 @@ const LAST = AGENTS.length - 1;
 const PIN_HEIGHT = "420vh";
 /** Keeps the pinned stage clear of the floating header. */
 const PIN_TOP = "5.5rem";
+/** How long a requested stop counts as "where the visitor is going" while the scroll to it is still easing. */
+const PENDING_STOP_MS = 2_000;
 
 /** The tab the arrow, Home and End keys move to, or null for keys this tablist ignores. */
 function nextTabIndex(key: string, current: number): number | null {
@@ -54,11 +56,20 @@ export function AgentExplorer() {
   const pinned = useMediaQuery(PIN_LARGE_QUERY);
   const scrolledIndex = useStoryStore((state) => state.tourIndex);
   const rotating = useRotatingIndex(AGENTS.length, { enabled: inView && !reduced && !pinned, intervalMs: CYCLE_MS });
+  // The stop a visitor just asked for. While pinned the index follows the scroll, which takes a moment to arrive,
+  // so a second key press in that time must continue from here rather than from the stale index.
+  const requestedStop = useRef<number | null>(null);
 
   const index = pinned ? scrolledIndex : rotating.index;
 
   function select(next: number) {
-    if (pinned && scrollToTourStop("agents", next, AGENTS.length)) return;
+    if (pinned && scrollToTourStop("agents", next, AGENTS.length)) {
+      requestedStop.current = next;
+      window.setTimeout(() => {
+        if (requestedStop.current === next) requestedStop.current = null;
+      }, PENDING_STOP_MS);
+      return;
+    }
     rotating.select(next);
   }
 
@@ -69,7 +80,7 @@ export function AgentExplorer() {
   }, [pinned, inView, rotating.index]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const target = nextTabIndex(event.key, index);
+    const target = nextTabIndex(event.key, requestedStop.current ?? index);
     if (target === null) return;
     event.preventDefault();
     select(target);

@@ -24,8 +24,8 @@ CSS does the animating wherever it can; JavaScript only flips switches (`data-in
 | Path | Role |
 | --- | --- |
 | `src/app/layout.tsx` | Pre-paint script (carries the CSP nonce), mounts the controllers. |
-| `src/components/motion/SmoothScroll.tsx` | Lenis on the GSAP ticker. Routes same-page links through it. Not started under reduced motion. |
-| `src/components/motion/PageEffects.tsx` | One controller: observes reveals, makes buttons lean toward the cursor, flashes the scene when a primary button is pressed. |
+| `src/components/motion/SmoothScroll.tsx` | Lenis on the GSAP ticker. Routes same-page links through it like a native link (keeps the query string, one history entry per new place, focus moves to the target). Scrollable boxes keep their own wheel (`allowNestedScroll`); a link to another page stops any scroll still easing (`stopInertiaOnNavigate`). Not started under reduced motion. |
+| `src/components/motion/PageEffects.tsx` | One controller: observes reveals (re-scanned on every route and whenever markup is added later), makes buttons lean toward the cursor, flashes the scene when a primary button is pressed. The last two are skipped under reduced motion. |
 | `src/components/motion/NavVisibility.tsx` | Sets `<html data-nav>` so the header slides away on scroll down and returns on scroll up. |
 | `src/components/motion/ScrubScene.tsx` | Scroll-scrubbed markup: `.scrub-word`, `.scrub-draw`, `.scrub-node`. |
 | `src/components/motion/Odometer.tsx` | Rolling digits (reveal, and on every change of value). |
@@ -86,9 +86,10 @@ shift page); `stagePose` turns the name into a pose. Outside the landing page th
 ```
 
 No scroll-jacking: the stage is `position: sticky` and the story reads the wrapper's geometry. `data-pin="lg"` pins
-only on large, tall screens (`PIN_LARGE_QUERY`, mirrored in `globals.css`); plain `data-pin` pins everywhere. Pinning
-needs `html.js` and no reduced-motion request, and the driver asks the CSS whether the stage is sticky, so layout and
-logic cannot disagree.
+only on large, tall screens (`PIN_LARGE_QUERY`, mirrored in `globals.css`); a plain `data-pin` pins on any screen at
+least 38rem tall, so a short landscape phone or a heavily zoomed window gets a normal section instead of a clipped
+stage. Pinning needs `html.js` and no reduced-motion request, and the driver asks the CSS whether the stage is
+sticky, so layout and logic cannot disagree.
 
 ### The agent tour
 
@@ -135,6 +136,11 @@ the rolling button label (`.btn-primary` has 28 call sites with plain text).
 - **Unlayered CSS beats Tailwind utilities.** A `box-shadow` in `.glass` would override every `shadow-*` class.
 - **The e2e server runs the production build** (`next start`). Run `npm run build` before `npm run test:e2e`, or the
   tests exercise old code.
+- **`StageSync` must clear `data-stage` when it unmounts,** or the scene stays on that agent's shot on every page after.
+- **Float32 does not round-trip most decimals.** Comparing a stored `Float32Array` value with the number it came from
+  (2.6, 0.45) is never equal, which made the reduced-motion scene redraw every frame. Use `Float64Array` for change checks.
+- **Never force-lose a WebGL context on a canvas that is still on the page.** React Strict Mode re-runs effects on the
+  same canvas, and a lost context cannot be reused. The scene only releases it when the canvas has left the document.
 - **Animation frames pause in a hidden browser pane.** To check scroll-driven motion, drive a headless browser with real
   wheel events; teleporting with `scrollTo` fights smooth scrolling.
 

@@ -235,7 +235,8 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
   const matrix = new THREE.Matrix4();
   const point = new THREE.Vector3();
   const packetColor = new THREE.Color();
-  const lastGoal = new Float32Array(9).fill(Number.NaN);
+  // Float64, not Float32: a value like 2.6 does not round-trip through float32, which made every frame look changed.
+  const lastGoal = new Float64Array(9).fill(Number.NaN);
   let writtenDim = -1;
   let firstFrame = true;
 
@@ -307,7 +308,7 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
     for (let i = 0; i < PACKETS; i++) {
       if (!reduced) packetT[i] = (packetT[i] + packetSpeed[i] * packetBoost * dt) % 1;
       curve.getPoint(packetT[i], point);
-      const pulse = 0.8 + Math.sin(time * 6 + i) * 0.35;
+      const pulse = reduced ? 1 : 0.8 + Math.sin(time * 6 + i) * 0.35;
       matrix.makeScale(pulse, pulse, pulse).setPosition(point);
       packets.setMatrixAt(i, matrix);
       packets.setColorAt(i, packetColor.copy(colorAt(packetT[i], agentT)).multiplyScalar(1.6 + live.pulse * 1.2));
@@ -337,7 +338,12 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
       if (Array.isArray(material)) material.forEach((m) => m.dispose());
       else material?.dispose();
     });
+    packets.dispose();
     glow.dispose();
     renderer.dispose();
+    // When the canvas has left the page (the visitor went to /admin) release its GPU context now rather than waiting
+    // for garbage collection, or each visit leaks one. A canvas still on the page is about to be reused (React
+    // Strict Mode re-runs effects), and a context that has been force-lost cannot be reused.
+    if (!canvas.isConnected) renderer.forceContextLoss();
   };
 }

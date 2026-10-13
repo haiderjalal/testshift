@@ -93,6 +93,59 @@ test.describe("scroll story, motion on", () => {
     expect(shown).toBeGreaterThan(0);
   });
 
+  test("a hash-only link keeps the query string, adds one history entry and moves focus to its target", async ({ page }) => {
+    await page.goto("/?ref=newsletter");
+    await expect(page.locator("html")).toHaveClass(/\bready\b/);
+    const link = page.locator('a[href="#agent-dev"]').first();
+    const entries = await page.evaluate(() => history.length);
+    await link.click();
+    await expect(page).toHaveURL(/\/\?ref=newsletter#agent-dev$/);
+    expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+    expect(await page.evaluate(() => document.activeElement?.id), "focus follows the scroll, as with a native link").toBe("agent-dev");
+    // The same place again: no second entry for Back to walk through.
+    await page.evaluate(() => document.querySelector<HTMLAnchorElement>('a[href="#agent-dev"]')?.click());
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+  });
+
+  test("a long textarea scrolls on its own instead of scrolling the page behind it", async ({ page }) => {
+    await page.goto("/hire");
+    await expect(page.locator("html")).toHaveClass(/\bready\b/);
+    const box = page.locator("textarea").first();
+    await box.fill(Array.from({ length: 60 }, (_, line) => `Line ${line + 1}`).join("\n"));
+    expect(await box.evaluate((node) => node.scrollHeight > node.clientHeight), "the box overflows").toBe(true);
+    await box.hover();
+    await page.waitForTimeout(1500); // let the page finish easing to the box before measuring where it is
+    const before = await page.evaluate(() => window.scrollY);
+    await page.mouse.wheel(0, 150);
+    await page.waitForTimeout(800);
+    expect(await box.evaluate((node) => node.scrollTop), "the wheel scrolled the textarea").toBeGreaterThan(0);
+    const after = await page.evaluate(() => window.scrollY);
+    expect(Math.abs(after - before), "and left the page where it was (give or take a pixel of rounding)").toBeLessThanOrEqual(3);
+  });
+
+  test("content added after load still reveals when it comes into view", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("html")).toHaveClass(/\bready\b/);
+    await page.evaluate(() => {
+      const late = document.createElement("div");
+      late.id = "late-block";
+      late.setAttribute("data-reveal", "");
+      late.textContent = "Added after the page loaded";
+      document.querySelector("main")?.prepend(late);
+    });
+    await expect(page.locator("#late-block")).toHaveAttribute("data-in", "", { timeout: 5000 });
+  });
+
+  test("the statement is not pinned on a screen too short to hold it", async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.goto("/");
+    await expect(page.locator("html")).toHaveClass(/\bready\b/);
+    const stage = page.locator("section[data-chapter=statement] [data-pin-stage]");
+    expect(await stage.evaluate((node) => getComputedStyle(node).position)).toBe("static");
+    expect(await stage.evaluate((node) => node.getBoundingClientRect().height), "its whole content is in the layout").toBeGreaterThan(300);
+  });
+
   test("the landing page has no serious accessibility violations, including the dimmed statement words", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("html")).toHaveClass(/\bready\b/);

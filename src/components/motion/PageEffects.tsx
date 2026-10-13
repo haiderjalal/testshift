@@ -96,22 +96,44 @@ function startMagnets(): () => void {
 export function PageEffects() {
   const pathname = usePathname();
 
-  // Re-scan on every route, because the layout (and this component) outlives navigation.
+  // Watch every element tagged for reveal. Re-scan on every route (the layout outlives navigation) and whenever
+  // the page adds markup later (streamed or conditionally rendered content), or that content would stay hidden.
   useEffect(() => {
-    const stops = Array.from(document.querySelectorAll(REVEAL_SELECTOR), observeReveal);
-    return () => stops.forEach((stop) => stop());
+    const stops = new Map<Element, () => void>();
+    const scan = () => {
+      document.querySelectorAll(REVEAL_SELECTOR).forEach((element) => {
+        if (!stops.has(element)) stops.set(element, observeReveal(element));
+      });
+    };
+    scan();
+
+    let queued = false;
+    const mutations = new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        scan();
+      });
+    });
+    mutations.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      mutations.disconnect();
+      stops.forEach((stop) => stop());
+    };
   }, [pathname]);
 
   useEffect(() => {
+    // Flashing the pipeline and leaning toward the cursor are motion, so neither runs for visitors who asked for less.
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const onPointerDown = (event: PointerEvent) => {
-      if ((event.target as Element | null)?.closest(PULSE_SELECTOR)) firePulse(1);
+      if (!calm && (event.target as Element | null)?.closest(PULSE_SELECTOR)) firePulse(1);
     };
     document.addEventListener("pointerdown", onPointerDown, { passive: true });
 
-    // Leaning toward the cursor needs a real mouse and a visitor who has not asked for less motion.
-    const useMagnets =
-      window.matchMedia("(hover: hover) and (pointer: fine)").matches && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const stopMagnets = useMagnets ? startMagnets() : undefined;
+    // Leaning toward the cursor also needs a real mouse.
+    const stopMagnets = !calm && window.matchMedia("(hover: hover) and (pointer: fine)").matches ? startMagnets() : undefined;
 
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
