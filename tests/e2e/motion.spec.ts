@@ -147,6 +147,9 @@ test.describe("scroll story, motion on", () => {
   });
 
   test("the landing page has no serious accessibility violations, including the dimmed statement words", async ({ page }) => {
+    // Walks a 15,000px page and runs axe twice over a large DOM. Quick on a fast machine, but a loaded or two-core CI
+    // runner needs minutes, and the default 30 seconds made this fail there with a timeout, not a violation.
+    test.setTimeout(180_000);
     await page.goto("/");
     await expect(page.locator("html")).toHaveClass(/\bready\b/);
     // Bring the statement on screen at its start, when most of its words are still dimmed: the worst case for contrast.
