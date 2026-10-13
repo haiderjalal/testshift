@@ -27,7 +27,7 @@ async function getRun(id: string): Promise<RunView | undefined> {
   // Elapsed time comes from the database clock, the same one that set the deadline.
   const [run] = await db()<RunView[]>`
     select id, url, email, plan, minutes, is_trial, notes, status, activity, agent, report, strategy, error, stripe_session_id,
-      started_at, deadline_at, completed_at, created_at, payment_method, quoted_hourly_cents, quoted_total_cents, payment_confirmed_at, start_authorized_at, api_spec_url, api_latency,
+      started_at, deadline_at, completed_at, created_at, payment_method, quoted_hourly_cents, quoted_total_cents, payment_confirmed_at, start_authorized_at, api_spec_url, api_latency, api_findings,
       (extract(epoch from least(now(), deadline_at) - started_at) * 1000)::float8 as elapsed_ms
     from runs where id = ${id}`;
   return run;
@@ -80,7 +80,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
         {run.status === "completed" ? (
           <div className="space-y-14">
             <Report run={run} cases={cases} />
-            <ApiChecks rows={apiChecks} specUrl={run.api_spec_url ?? null} latency={run.api_latency ?? null} />
+            <ApiChecks runId={id} rows={apiChecks} specUrl={run.api_spec_url ?? null} latency={run.api_latency ?? null} findings={run.api_findings ?? []} />
             <VisualSnapshots runId={id} rows={visualRows} />
             {ownership && <OwnershipPanel
               runId={id}

@@ -6,7 +6,7 @@ Full product context: [docs/PRODUCT_CONTEXT.md](docs/PRODUCT_CONTEXT.md). Plan a
 
 Repository access, destructive testing and CI: [GitHub testing setup](docs/GITHUB_TESTING.md). `/repositories` supports GitHub App sign-in, verified connections and private CI reports. Customers download a workflow/action bundle for GitHub-hosted execution. Configure the App, apply the reviewed migration and run `npm run github:worker` to activate reporting. This repository also has a [QA workflow](.github/workflows/qa.yml).
 
-Current hardening results and release limitations: [QA audit](docs/QA_AUDIT.md). Detailed test-generation/execution workflow and cost controls: [Agent workflow](docs/AGENT_WORKFLOW.md).
+Current hardening results and release limitations: [QA audit](docs/QA_AUDIT.md). Detailed test-generation/execution workflow and cost controls: [Agent workflow](docs/AGENT_WORKFLOW.md). API checks, spec review, Postman import and export, and what they do not cover: [API testing](docs/API_TESTING.md).
 
 Current beta billing: [Wise onboarding and 10× hourly pricing](docs/BETA_BILLING.md). Stripe is parked. Paid orders require manual payment confirmation and a separate admin start.
 

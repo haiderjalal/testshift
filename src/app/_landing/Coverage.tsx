@@ -27,7 +27,7 @@ const COVERAGE: CoverageItem[] = [
   {
     title: "API checks",
     check: null,
-    body: "We read your OpenAPI or Swagger description, or a Postman collection you paste, and test each read-only endpoint for status, response schema and latency. Requests that change data run only on an approved test environment.",
+    body: "We read your OpenAPI or Swagger description, or a Postman collection you paste, and test each read-only endpoint for status, response schema, latency, and malformed input that must not cause a server error. Protected endpoints must refuse anonymous calls. Requests that change data run only on an approved test environment.",
   },
   {
     title: "Mobile and edge cases",
