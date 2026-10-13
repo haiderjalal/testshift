@@ -1,25 +1,36 @@
+import gsap from "gsap";
 import * as THREE from "three";
+
+import { clamp, damp, lerp } from "@/lib/motion/math";
+import { AGENT_POSITIONS, stagePose } from "@/lib/story/poses";
+import { live, story, target } from "@/lib/story/sceneState";
 
 /**
  * The page-wide 3D scene: four agent cores on a glowing pipeline with test packets flowing through it.
- * The camera follows `<html data-stage>`: "hero" frames the whole pipeline, an agent id flies to that
- * agent, anything else pulls back to an overview. Imperative three.js, started once per page.
+ * It does not decide where to look. The scroll story (`StoryDriver`) writes a target pose and the scene eases
+ * toward it: camera, brightness, which agent is lit. Pages without a story name a stage on `<html data-stage>`
+ * instead. Imperative three.js, started once per page, ticking on GSAP's clock with scroll and smooth scrolling.
  */
 
-const AGENTS = [
-  { id: "dev", color: 0x45d4ff, position: new THREE.Vector3(-4.8, 0.5, 0.4) },
-  { id: "staging", color: 0xa07cff, position: new THREE.Vector3(-1.6, -0.7, -2.6) },
-  { id: "uat", color: 0xff6fd1, position: new THREE.Vector3(1.6, 0.7, -0.8) },
-  { id: "prod", color: 0xff9f43, position: new THREE.Vector3(4.8, -0.4, -3.2) },
+const AGENT_STYLE = [
+  { id: "dev", color: 0x45d4ff },
+  { id: "staging", color: 0xa07cff },
+  { id: "uat", color: 0xff6fd1 },
+  { id: "prod", color: 0xff9f43 },
 ] as const;
+const AGENTS = AGENT_STYLE.map((agent, i) => ({ ...agent, position: new THREE.Vector3(...AGENT_POSITIONS[i]) }));
 
 const PACKETS = 26;
-const BACKGROUND = 0x05070d;
+const BACKGROUND = 0x090d18; // brand navy, same as --color-paper
 
-interface Shot {
-  position: THREE.Vector3;
-  target: THREE.Vector3;
-}
+/** How fast (per second) the scene closes the gap to the story's pose. */
+const CAMERA_EASE = 2.2;
+const DIM_EASE = 2.4;
+const FOCUS_EASE = 5;
+const PULSE_DECAY = 3;
+/** How far back the camera starts on load, in scene units, before it flies in. */
+const INTRO_DISTANCE = 8;
+const INTRO_SESSION_KEY = "testshift:intro-seen";
 
 function glowTexture(): THREE.Texture {
   const canvas = document.createElement("canvas");
@@ -185,33 +196,9 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
   (grid.material as THREE.Material).opacity = 0.55;
   scene.add(grid);
 
-  // Camera shots per stage. Agents sit right of centre so section text can live on the left.
-  const shot = (stage: string | undefined, aspect: number): Shot => {
-    const narrow = aspect < 1;
-    const agent = AGENTS.find((a) => a.id === stage);
-    if (agent) {
-      if (narrow) {
-        return { position: agent.position.clone().add(new THREE.Vector3(0, 1.8, 11)), target: agent.position.clone() };
-      }
-      // Camera sits to the agent's right and looks past it to the left, so the agent lands right of centre
-      // and the agents before it stay behind the text panel instead of between the camera and the focus.
-      return {
-        position: agent.position.clone().add(new THREE.Vector3(1.2, 2.2, 9)),
-        target: agent.position.clone().add(new THREE.Vector3(-3.4, -0.2, 0)),
-      };
-    }
-    if (stage === "hero") {
-      return narrow
-        ? { position: new THREE.Vector3(0, 8, 34), target: new THREE.Vector3(0, 7, 0) }
-        : { position: new THREE.Vector3(-6.5, 2.6, 18.5), target: new THREE.Vector3(-6.5, 2.1, 0) };
-    }
-    return { position: new THREE.Vector3(0, 7.5, narrow ? 32 : 22), target: new THREE.Vector3(0, -1, -1) };
-  };
-
-  const current = shot("hero", 16 / 9);
-  camera.position.copy(current.position);
-  const lookAt = current.target.clone();
-  const pointer = { x: 0, y: 0 };
+  const lookAt = new THREE.Vector3();
+  const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 };
+  let needsRender = true;
 
   const resize = () => {
     const width = canvas.clientWidth;
@@ -219,6 +206,7 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
     renderer.setSize(width, height, false);
     camera.aspect = width / Math.max(height, 1);
     camera.updateProjectionMatrix();
+    needsRender = true;
   };
   const onPointer = (e: PointerEvent) => {
     pointer.x = e.clientX / window.innerWidth - 0.5;
@@ -228,36 +216,85 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
   window.addEventListener("resize", resize);
   if (!reduced) window.addEventListener("pointermove", onPointer, { passive: true });
 
+  // The scene opens on its first pose, pulled back, and flies in. A returning visitor in the same session gets it faster.
+  let returning = false;
+  try {
+    returning = window.sessionStorage.getItem(INTRO_SESSION_KEY) === "1";
+    window.sessionStorage.setItem(INTRO_SESSION_KEY, "1");
+  } catch {
+    // Storage can be blocked; the intro just plays at full length.
+  }
+  const initial = story.active ? target : stagePose(document.documentElement.dataset.stage, camera.aspect < 1);
+  live.pos = [initial.pos[0], initial.pos[1], initial.pos[2]];
+  live.look = [initial.look[0], initial.look[1], initial.look[2]];
+  live.focus = initial.focus;
+  live.dim = 0;
+  live.intro = reduced ? 0 : 1;
+  if (!reduced) gsap.to(live, { intro: 0, duration: returning ? 1.4 : 2.8, delay: 0.15, ease: "power3.out" });
+
   const matrix = new THREE.Matrix4();
   const point = new THREE.Vector3();
-  const clock = new THREE.Clock();
-  let lastStage: string | undefined = "__none";
+  const packetColor = new THREE.Color();
+  // Float64, not Float32: a value like 2.6 does not round-trip through float32, which made every frame look changed.
+  const lastGoal = new Float64Array(9).fill(Number.NaN);
+  let writtenDim = -1;
   let firstFrame = true;
 
-  renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.05);
-    const time = clock.elapsedTime;
-    const stage = document.documentElement.dataset.stage;
+  /** True when the story's pose differs from the one last drawn. Only used with reduced motion, which draws on change. */
+  const goalChanged = (pos: readonly number[], look: readonly number[], dim: number, focus: number): boolean => {
+    const next = [pos[0], pos[1], pos[2], look[0], look[1], look[2], dim, focus, story.agentOverride ?? -2];
+    let changed = false;
+    next.forEach((value, i) => {
+      if (lastGoal[i] !== value) changed = true;
+      lastGoal[i] = value;
+    });
+    return changed;
+  };
 
-    // With reduced motion, nothing moves: render only when the stage changes, and cut instead of flying.
-    if (reduced && stage === lastStage && !firstFrame) return;
-    lastStage = stage;
+  const tick = (time: number, deltaMs: number) => {
+    const dt = Math.min(deltaMs / 1000, 0.05);
+    const goal = story.active ? target : stagePose(document.documentElement.dataset.stage, camera.aspect < 1);
+    // Outside the landing page the scene is always a backdrop, never the show.
+    const goalDim = story.active ? goal.dim : Math.min(goal.dim, story.pageDim);
 
-    const goal = shot(stage, camera.aspect);
-    const ease = reduced ? 1 : 1 - Math.exp(-dt * 2.2);
-    goal.position.x += pointer.x * 1.4;
-    goal.position.y -= pointer.y * 0.8;
-    camera.position.lerp(goal.position, ease);
-    lookAt.lerp(goal.target, ease);
+    // With reduced motion nothing moves: draw only when the pose or the window changes, and cut instead of flying.
+    if (reduced && !needsRender && !firstFrame && !goalChanged(goal.pos, goal.look, goalDim, goal.focus)) return;
+    needsRender = false;
+
+    const ease = (rate: number) => (reduced ? 1 : 1 - Math.exp(-rate * dt));
+    const k = ease(CAMERA_EASE);
+    for (let axis = 0; axis < 3; axis++) {
+      live.pos[axis] += (goal.pos[axis] - live.pos[axis]) * k;
+      live.look[axis] += (goal.look[axis] - live.look[axis]) * k;
+    }
+    live.dim += (goalDim - live.dim) * ease(DIM_EASE);
+    live.focus += (goal.focus - live.focus) * ease(FOCUS_EASE);
+    live.pulse = live.pulse < 0.01 ? 0 : damp(live.pulse, 0, PULSE_DECAY, dt);
+
+    pointer.smoothX = damp(pointer.smoothX, pointer.x, 3, dt);
+    pointer.smoothY = damp(pointer.smoothY, pointer.y, 3, dt);
+    camera.position.set(
+      live.pos[0] + pointer.smoothX * 1.4,
+      live.pos[1] - pointer.smoothY * 0.8 + live.intro * 2,
+      live.pos[2] + live.intro * INTRO_DISTANCE,
+    );
+    lookAt.set(live.look[0], live.look[1], live.look[2]);
     camera.lookAt(lookAt);
 
-    const focused = AGENTS.some((a) => a.id === stage);
+    // The story's dim dial reaches CSS as a variable (see canvas[data-scene] in globals.css).
+    if (firstFrame || Math.abs(live.dim - writtenDim) > 0.003) {
+      canvas.style.setProperty("--scene-dim", live.dim.toFixed(3));
+      writtenDim = live.dim;
+    }
+
+    // Agent cores: the lit agent grows and glows, the others step back. `focus` is a float, so a tour glides between them.
+    const anyFocus = clamp(live.focus + 1, 0, 1);
     for (const [i, c] of cores.entries()) {
-      const active = c.id === stage;
-      const targetScale = active ? 1.35 : focused ? 0.85 : 1;
+      const weight = clamp(1 - Math.abs(live.focus - i), 0, 1);
+      const targetScale = lerp(1, lerp(0.85, 1.35, weight), anyFocus);
       c.scale += (targetScale - c.scale) * (reduced ? 1 : Math.min(1, dt * 4));
       c.group.scale.setScalar(c.scale);
-      (c.halo.material as THREE.SpriteMaterial).opacity = active ? 0.85 : focused ? 0.25 : 0.45;
+      (c.halo.material as THREE.SpriteMaterial).opacity = lerp(0.45, lerp(0.25, 0.85, weight), anyFocus) + live.pulse * 0.4;
       if (!reduced) {
         c.core.rotation.y += dt * 0.45;
         c.core.rotation.x += dt * 0.18;
@@ -267,13 +304,14 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
       }
     }
 
+    const packetBoost = 1 + live.pulse * 3;
     for (let i = 0; i < PACKETS; i++) {
-      if (!reduced) packetT[i] = (packetT[i] + packetSpeed[i] * dt) % 1;
+      if (!reduced) packetT[i] = (packetT[i] + packetSpeed[i] * packetBoost * dt) % 1;
       curve.getPoint(packetT[i], point);
-      const pulse = 0.8 + Math.sin(time * 6 + i) * 0.35;
+      const pulse = reduced ? 1 : 0.8 + Math.sin(time * 6 + i) * 0.35;
       matrix.makeScale(pulse, pulse, pulse).setPosition(point);
       packets.setMatrixAt(i, matrix);
-      packets.setColorAt(i, colorAt(packetT[i], agentT).multiplyScalar(1.6));
+      packets.setColorAt(i, packetColor.copy(colorAt(packetT[i], agentT)).multiplyScalar(1.6 + live.pulse * 1.2));
     }
     packets.instanceMatrix.needsUpdate = true;
     if (packets.instanceColor) packets.instanceColor.needsUpdate = true;
@@ -285,10 +323,12 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
       firstFrame = false;
       canvas.dataset.ready = "true";
     }
-  });
+  };
+  gsap.ticker.add(tick);
 
   return () => {
-    renderer.setAnimationLoop(null);
+    gsap.ticker.remove(tick);
+    gsap.killTweensOf(live);
     window.removeEventListener("resize", resize);
     window.removeEventListener("pointermove", onPointer);
     scene.traverse((object) => {
@@ -298,7 +338,12 @@ export function startScene(canvas: HTMLCanvasElement): () => void {
       if (Array.isArray(material)) material.forEach((m) => m.dispose());
       else material?.dispose();
     });
+    packets.dispose();
     glow.dispose();
     renderer.dispose();
+    // When the canvas has left the page (the visitor went to /admin) release its GPU context now rather than waiting
+    // for garbage collection, or each visit leaks one. A canvas still on the page is about to be reused (React
+    // Strict Mode re-runs effects), and a context that has been force-lost cannot be reused.
+    if (!canvas.isConnected) renderer.forceContextLoss();
   };
 }

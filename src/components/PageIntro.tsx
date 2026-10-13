@@ -14,7 +14,7 @@ interface PageIntroProps {
 export function PageIntro({ eyebrow, title, description, children }: PageIntroProps) {
   return (
     <div className="max-w-3xl">
-      {eyebrow && <p className="rise font-mono text-xs tracking-widest text-graphite uppercase">{eyebrow}</p>}
+      {eyebrow && <p className="rise eyebrow">{eyebrow}</p>}
       <h1
         className="rise mt-4 font-display text-4xl leading-[1.05] font-semibold tracking-[-0.03em] text-balance sm:text-5xl"
         style={{ ["--d" as string]: 1 }}

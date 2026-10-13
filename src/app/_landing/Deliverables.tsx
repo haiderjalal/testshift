@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 
+import { SplitText } from "@/components/SplitText";
 import { useInView } from "@/hooks/useInView";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useRotatingIndex } from "@/hooks/useRotatingIndex";
@@ -31,16 +32,20 @@ export function Deliverables() {
   return (
     <section
       ref={rootRef}
-      data-stage="overview"
+      id="deliverables"
+      data-chapter="deliverables"
       aria-labelledby="deliver-heading"
-      className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-28 sm:px-8 lg:grid-cols-2"
+      className="mx-auto grid max-w-7xl scroll-mt-20 items-center gap-12 px-5 py-28 sm:px-8 lg:grid-cols-2"
     >
       <div>
-        <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">When the shift ends</p>
-        <h2 id="deliver-heading" className="reveal mt-4 font-display text-4xl leading-[1.05] font-semibold tracking-[-0.03em] sm:text-5xl">
-          What lands in your inbox.
-        </h2>
-        <div className="reveal mt-8 flex items-center gap-5">
+        <p data-reveal="" className="eyebrow">When the shift ends</p>
+        <SplitText
+          as="h2"
+          id="deliver-heading"
+          className="mt-4 font-display text-4xl leading-[1.05] font-semibold tracking-[-0.03em] sm:text-5xl"
+          lines={[{ text: "What lands" }, { text: "in your inbox.", accent: true }]}
+        />
+        <div data-reveal="" className="mt-8 flex items-center gap-5">
           <div
             className="count-up grid size-24 shrink-0 place-items-center rounded-full font-display text-3xl font-semibold"
             style={{
@@ -62,7 +67,7 @@ export function Deliverables() {
             const selected = i === index;
             const accent = LAYERS.find((layer) => layer.label === d.label)?.accent;
             return (
-              <li key={d.label} className="reveal">
+              <li key={d.label} data-reveal="" style={{ ["--i" as string]: i }}>
                 <button
                   type="button"
                   aria-pressed={selected}

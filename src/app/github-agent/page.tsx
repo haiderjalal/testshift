@@ -37,7 +37,7 @@ export default function GitHubAgentPage() {
         />
       </div>
 
-      <p className="mt-14 font-mono text-xs tracking-widest text-graphite uppercase">Choose a path</p>
+      <p className="mt-14 eyebrow">Choose a path</p>
       <div className="mt-5 grid gap-5 md:grid-cols-3">
         {options.map((option, index) => <div key={option.name} className="rise h-full" style={{ ["--d" as string]: index + 1 }}>
           <SpotlightCard accent={option.accent} className="glass glass-strong h-full rounded-3xl p-7">
@@ -57,7 +57,7 @@ export default function GitHubAgentPage() {
       </div>
 
       <section aria-labelledby="repo-process" className="mt-20">
-        <p className="font-mono text-xs tracking-widest text-graphite uppercase">Process</p>
+        <p className="eyebrow">Process</p>
         <h2 id="repo-process" className="mt-4 font-display text-3xl font-semibold">How repository testing runs</h2>
         <ol className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {processSteps.map((step) => <li key={step.title} className="glass glass-strong rounded-3xl p-6">

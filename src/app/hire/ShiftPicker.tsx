@@ -14,7 +14,7 @@ interface ShiftPickerProps {
 
 // The free trial is green and paid hours are neutral, so the two kinds of shift read as different choices.
 const paidChip =
-  "cursor-pointer rounded-full border border-rule bg-card px-3 py-3 text-center font-mono has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-ink";
+  "cursor-pointer rounded-full border border-rule bg-card px-3 py-3 text-center font-mono has-checked:border-brand has-checked:bg-brand has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-brand";
 const trialChip =
   "block cursor-pointer rounded-full border border-pass/50 px-4 py-3 text-center font-mono text-pass has-checked:border-pass has-checked:bg-pass has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-pass";
 

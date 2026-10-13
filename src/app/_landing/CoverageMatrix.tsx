@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Odometer } from "@/components/motion/Odometer";
 import { PLAN_IDS, PLANS, type PlanId } from "@/lib/plans";
 
 type PlanCheck = keyof (typeof PLANS)[PlanId]["checks"];
@@ -37,7 +38,7 @@ export function CoverageMatrix({ rows }: { rows: CoverageRow[] }) {
             {PLAN_IDS.map((id) => (
               <label
                 key={id}
-                className="cursor-pointer rounded-xl border border-rule bg-card/60 px-3 py-3 text-center text-sm transition hover:border-graphite has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-dev"
+                className="cursor-pointer rounded-xl border border-rule bg-card/60 px-3 py-3 text-center text-sm transition hover:border-graphite has-checked:border-brand has-checked:bg-brand has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-dev"
               >
                 <input
                   type="radio"
@@ -55,7 +56,7 @@ export function CoverageMatrix({ rows }: { rows: CoverageRow[] }) {
 
         <div aria-live="polite" className="glass mt-6 rounded-2xl p-5">
           <p className="font-display text-3xl font-semibold tracking-tight tabular-nums">
-            {includedCount}
+            <Odometer value={includedCount} />
             <span className="text-graphite"> / {rows.length}</span>
           </p>
           <p className="mt-1 text-sm text-graphite">checks included on {PLANS[planId].name}</p>

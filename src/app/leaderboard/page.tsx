@@ -34,7 +34,8 @@ export default async function LeaderboardPage() {
           eyebrow="Live rankings"
           title={
             <>
-              <SplitText text="Fewest bugs" /> <SplitText text="wins." color="var(--color-pass)" offset={12} />
+              <SplitText unit="chars" trigger="load" lines={[{ text: "Fewest bugs" }]} />{" "}
+              <SplitText unit="chars" trigger="load" offset={12} lines={[{ text: "wins.", color: "var(--color-pass)" }]} />
             </>
           }
           description="Every site is ranked by the score of its latest QA shift. Fix your bugs, book a retest and climb."
@@ -57,7 +58,7 @@ export default async function LeaderboardPage() {
                 </ol>
               </section>
             )}
-            <div className="glass reveal mt-16 flex flex-col items-start justify-between gap-5 rounded-3xl p-8 sm:flex-row sm:items-center">
+            <div data-reveal="" className="glass mt-16 flex flex-col items-start justify-between gap-5 rounded-3xl p-8 sm:flex-row sm:items-center">
               <div>
                 <p className="font-display text-xl font-semibold">Not on the podium yet?</p>
                 <p className="mt-1 text-graphite">Your latest shift sets your rank. Fix what we found and retest.</p>
