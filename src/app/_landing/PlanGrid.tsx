@@ -26,7 +26,7 @@ export function PlanGrid({ prices }: { prices: BetaPrices }) {
             {HOUR_OPTIONS.map((option) => (
               <label
                 key={option}
-                className="cursor-pointer rounded-full border border-rule bg-card/60 px-4 py-2 font-mono text-sm transition hover:border-graphite has-checked:border-ink has-checked:bg-ink has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-dev"
+                className="cursor-pointer rounded-full border border-rule bg-card/60 px-4 py-2 font-mono text-sm transition hover:border-graphite has-checked:border-brand has-checked:bg-brand has-checked:text-paper has-focus-visible:outline-2 has-focus-visible:outline-dev"
               >
                 <input
                   type="radio"
@@ -49,7 +49,7 @@ export function PlanGrid({ prices }: { prices: BetaPrices }) {
           const plan = PLANS[id];
           const hourly = prices[id];
           return (
-            <div key={id} className="reveal">
+            <div key={id} data-reveal="" style={{ ["--i" as string]: PLAN_IDS.indexOf(id) }}>
               <SpotlightCard tilt accent={TIER_COLOR[i]} className="glass flex h-full flex-col rounded-3xl p-7">
                 <p className="font-mono text-[11px] tracking-widest uppercase" style={{ color: TIER_COLOR[i] }}>
                   {plan.name}
@@ -80,7 +80,7 @@ export function PlanGrid({ prices }: { prices: BetaPrices }) {
                 </ul>
                 <Link
                   href={`/hire?plan=${id}&hours=${hours}`}
-                  className="mt-8 rounded-full border border-rule px-5 py-3 text-center font-medium transition hover:border-ink hover:bg-ink hover:text-paper"
+                  className="mt-8 rounded-full border border-rule px-5 py-3 text-center font-medium transition hover:border-brand hover:bg-brand hover:text-paper"
                 >
                   Book {plan.name}
                 </Link>

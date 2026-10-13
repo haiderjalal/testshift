@@ -8,12 +8,12 @@ export interface SiteLink {
   label: string;
 }
 
-/** Phone navigation: the section links are hidden behind this button below the sm breakpoint. */
+/** Compact navigation: the section links are hidden behind this button below the lg breakpoint. */
 export function MobileMenu({ links }: { links: readonly SiteLink[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="relative sm:hidden">
+    <div className="relative lg:hidden">
       <button
         type="button"
         aria-expanded={open}

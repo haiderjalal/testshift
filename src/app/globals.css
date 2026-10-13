@@ -1,25 +1,43 @@
 @import "tailwindcss";
 
-/* TestShift: a dark test lab. Each agent owns a hue; yellow is reserved for flagging bugs. */
+/*
+ * TestShift brand: a dark test lab in brand navy with one luminous cyan, taken from the S mark.
+ * Surfaces step up from paper to card to raised. Each agent owns a hue; yellow is reserved for flagging bugs.
+ * Brand reference and logo usage: docs/BRAND.md.
+ */
 @theme {
-  --color-paper: #05070d;
-  --color-card: #0a0f1c;
-  --color-raised: #111a2d;
+  --color-paper: #090d18;
+  --color-card: #0f1626;
+  --color-raised: #172036;
   --color-ink: #e8edf6;
   --color-graphite: #8e99ae;
-  --color-rule: #1b2438;
+  --color-rule: #212c45;
   --color-marker: #ffe45c;
   --color-pass: #3ddc97;
   --color-fail: #ff5470;
   --color-hold: #a5b1c6;
+
+  /* Brand: the S mark's cyan, and the deeper blue of its fold. */
+  --color-brand: #45d4ff;
+  --color-brand-deep: #2b8fe6;
+
+  /* Agents. Dev shares the brand cyan. */
   --color-dev: #45d4ff;
   --color-staging: #a07cff;
   --color-uat: #ff6fd1;
   --color-prod: #ff9f43;
 
-  --font-display: var(--font-unbounded), var(--font-familjen), ui-sans-serif, sans-serif;
+  --font-display: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  --shadow-glow: 0 0 60px -10px rgb(69 212 255 / 0.45);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  /* The one brand gradient: accent words, the primary button and the reading-progress line. Use sparingly. */
+  --gradient-brand: linear-gradient(115deg, #8fe7ff 0%, #45d4ff 45%, #2b8fe6 100%);
 }
 
 html {
@@ -30,10 +48,10 @@ html {
 
 body {
   color: var(--color-ink);
-  /* Soft agent-coloured light behind everything, visible before (or without) the 3D scene. */
+  /* Soft brand light behind everything, visible before (or without) the 3D scene. */
   background:
-    radial-gradient(60rem 40rem at 85% -10%, color-mix(in srgb, var(--color-staging) 14%, transparent), transparent 70%),
-    radial-gradient(50rem 36rem at -10% 30%, color-mix(in srgb, var(--color-dev) 10%, transparent), transparent 70%);
+    radial-gradient(60rem 40rem at 85% -10%, color-mix(in srgb, var(--color-brand) 12%, transparent), transparent 70%),
+    radial-gradient(50rem 36rem at -10% 30%, color-mix(in srgb, var(--color-brand-deep) 11%, transparent), transparent 70%);
   background-attachment: fixed;
 }
 
@@ -62,6 +80,7 @@ body {
 
 /* ------------------------------------------------------------------ buttons & surfaces */
 
+/* Primary action: the brand gradient with dark text. One per view. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -69,30 +88,67 @@ body {
   gap: 0.5rem;
   border-radius: 9999px;
   padding-inline: 1.5rem;
-  background: var(--color-ink);
+  background: var(--gradient-brand);
   color: var(--color-paper);
-  font-weight: 500;
+  font-weight: 600;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-dev) 40%, transparent),
-    0 10px 40px -10px color-mix(in srgb, var(--color-dev) 60%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--color-brand) 55%, transparent),
+    0 10px 40px -12px color-mix(in srgb, var(--color-brand) 70%, transparent);
   transition:
     transform 200ms,
-    box-shadow 200ms;
+    box-shadow 200ms,
+    filter 200ms;
 }
 .btn-primary:hover {
   transform: translateY(-1px);
+  filter: brightness(1.07);
   box-shadow:
-    0 0 0 1px var(--color-dev),
-    0 14px 50px -8px color-mix(in srgb, var(--color-dev) 80%, transparent);
+    0 0 0 1px var(--color-brand),
+    0 14px 56px -8px color-mix(in srgb, var(--color-brand) 85%, transparent);
 }
 .btn-primary:active {
   transform: scale(0.98);
 }
 
+/* Gradient text for accent words. */
+.text-gradient {
+  background-image: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Eyebrow pill above a heading: a glowing dot and a mono label. */
+.eyebrow {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--color-brand) 28%, transparent);
+  background: color-mix(in srgb, var(--color-brand) 7%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--color-brand);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.eyebrow::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: var(--color-brand);
+  box-shadow: 0 0 12px var(--color-brand);
+}
+
+/* Frosted glass. Write only the unprefixed backdrop-filter: with a -webkit- twin after it, the build drops both. */
 .glass {
   background: color-mix(in srgb, var(--color-card) 72%, transparent);
   backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--color-ink) 9%, transparent);
 }
 /* Use with .glass on text-heavy surfaces that sit over the 3D scene, so the scene never reads through the copy. */
@@ -147,128 +203,21 @@ body {
 
 /* ------------------------------------------------------------------ logo */
 
-@keyframes draw {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
+/* The logo is an image, so hover is a soft glow in the brand cyan. */
+.logo img {
+  transition: filter 300ms;
 }
-@keyframes redraw {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-.logo-hex,
-.logo-check {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: draw 1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
-}
-.logo-check {
-  animation-duration: 450ms;
-  animation-delay: 900ms;
-}
-.logo:hover .logo-hex {
-  animation-name: redraw;
-  animation-delay: 0ms;
-}
-.logo:hover .logo-check {
-  animation-name: redraw;
-  animation-delay: 500ms;
+.logo:hover img,
+.logo:focus-visible img {
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--color-brand) 55%, transparent));
 }
 
-/* The four vertex nodes light up in pipeline order: Dev → Staging → UAT → Prod. */
-@keyframes node-pulse {
-  0%,
-  30%,
-  100% {
-    opacity: 0.25;
-    transform: scale(1);
-  }
-  12% {
-    opacity: 1;
-    transform: scale(1.6);
-  }
-}
-.logo-node {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: node-pulse 4s ease-in-out infinite;
-  animation-delay: calc(1.2s + var(--i) * 1s);
-}
-
-@keyframes letter-in {
-  from {
-    opacity: 0;
-    transform: translateY(70%) skewX(-14deg);
-    filter: blur(4px);
-  }
-}
-.logo-letter {
-  display: inline-block;
-  animation: letter-in 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(350ms + var(--i) * 45ms);
-}
-
-/* A band of light sweeps across the wordmark; overlay blending makes it show on the letters, not the background. */
-@keyframes sheen {
-  0% {
-    transform: translateX(-120%) skewX(-20deg);
-  }
-  35%,
-  100% {
-    transform: translateX(420%) skewX(-20deg);
-  }
-}
-.logo-word {
-  position: relative;
-  overflow: hidden;
-  padding-inline: 0.1em;
-}
-.logo-word::after {
-  content: "";
-  position: absolute;
-  inset: -20% auto -20% 0;
-  width: 30%;
-  background: linear-gradient(90deg, transparent, var(--color-dev), transparent);
-  mix-blend-mode: overlay;
-  transform: translateX(-120%) skewX(-20deg);
-  animation: sheen 6s 2.2s ease-in-out infinite both;
-  pointer-events: none;
+/* Oversized, faded wordmark that closes the page. */
+.footer-wordmark {
+  mask-image: linear-gradient(to bottom, #000 25%, transparent 92%);
 }
 
 /* ------------------------------------------------------------------ text & load motion */
-
-@keyframes char-in {
-  0% {
-    opacity: 0;
-    transform: translateY(0.45em);
-    filter: blur(10px);
-    color: var(--color-dev);
-  }
-  60% {
-    opacity: 1;
-    filter: blur(0);
-    color: var(--color-dev);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-    color: var(--char-color, var(--color-ink));
-  }
-}
-.char {
-  display: inline-block;
-  white-space: pre;
-  color: var(--char-color, var(--color-ink));
-  animation: char-in 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(150ms + var(--i) * 26ms);
-}
 
 @keyframes rise {
   from {
@@ -370,13 +319,19 @@ body {
 
 /* ------------------------------------------------------------------ 3D scene */
 
-/* The 3D scene steps back in text-heavy sections and on phones, so copy stays readable. */
-html[data-stage="overview"] canvas[data-ready="true"] {
-  opacity: 0.4;
+/*
+ * The scene's brightness is a dial the scroll story turns (see lib/story): text-heavy chapters dim it so copy stays
+ * readable. The scene writes it to --scene-dim. If WebGL is unavailable the canvas never becomes ready and stays clear.
+ */
+canvas[data-scene] {
+  opacity: 0;
+}
+canvas[data-scene][data-ready="true"] {
+  opacity: var(--scene-dim, 0);
 }
 @media (max-width: 767px) {
-  canvas[data-ready="true"] {
-    opacity: 0.55;
+  canvas[data-scene][data-ready="true"] {
+    opacity: calc(var(--scene-dim, 0) * 0.75);
   }
 }
 
@@ -395,19 +350,6 @@ html[data-stage="overview"] canvas[data-ready="true"] {
 /* ------------------------------------------------------------------ scroll-driven (native, no JS) */
 
 @supports (animation-timeline: view()) {
-  @keyframes reveal {
-    from {
-      opacity: 0;
-      transform: translateY(40px) scale(0.98);
-      filter: blur(6px);
-    }
-  }
-  .reveal {
-    animation: reveal linear both;
-    animation-timeline: view();
-    animation-range: entry 0% entry 60%;
-  }
-
   @keyframes explode {
     from {
       transform: translateZ(calc(var(--i) * 10px));
@@ -542,7 +484,7 @@ html[data-stage="overview"] canvas[data-ready="true"] {
 /* ------------------------------------------------------------------ reading progress (header bottom edge) */
 
 .scroll-progress {
-  background: linear-gradient(90deg, var(--color-dev), var(--color-staging), var(--color-uat), var(--color-prod));
+  background: var(--gradient-brand);
   transform: scaleX(0);
   transform-origin: 0 50%;
 }
@@ -621,6 +563,224 @@ html[data-stage="overview"] canvas[data-ready="true"] {
   opacity: 0.6;
 }
 
+/* ------------------------------------------------------------------ motion system (docs/MOTION.md) */
+
+/*
+ * The convention: anything that starts hidden is written as `html.js:not(.rm) ...`.
+ *   html.js     JavaScript is on, so it is safe to hide things until they reveal. Without JS nothing is ever hidden.
+ *   html.rm     The visitor asked for reduced motion. Nothing is hidden or animated.
+ *   html.ready  Hydration finished. If it never arrives, the failsafe below shows everything after 4 seconds.
+ * Both classes are set by the pre-paint script in layout.tsx, before the first paint.
+ */
+html.js:not(.rm):not(.ready) [data-split="view"] .split-unit,
+html.js:not(.rm):not(.ready) [data-reveal],
+html.js:not(.rm):not(.ready) .scrub-word,
+html.js:not(.rm):not(.ready) .scrub-draw,
+html.js:not(.rm):not(.ready) .scrub-node {
+  animation: failsafe-show 0s 4s forwards;
+}
+@keyframes failsafe-show {
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Split text: words (or letters) rise out of a mask. SplitText renders the markup on the server. */
+.split-word {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.split-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  /* Room for descenders inside the mask. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+.split-unit {
+  display: inline-block;
+}
+html.js:not(.rm) [data-split="view"]:not([data-in]) .split-unit {
+  transform: translateY(112%) rotate(5deg);
+  opacity: 0;
+}
+html.js:not(.rm) [data-split="view"] .split-unit {
+  transition:
+    transform 0.95s var(--ease-expo) calc(var(--d, 0ms) + var(--i, 0) * 38ms),
+    opacity 0.6s ease calc(var(--d, 0ms) + var(--i, 0) * 38ms);
+}
+/* On load (the hero): pure CSS keyframes that start at first paint and need no JavaScript, so the headline stays the LCP. */
+html.js:not(.rm) [data-split="load"] .split-unit {
+  animation: split-rise 0.85s var(--ease-expo) both;
+  animation-delay: calc(var(--d, 0ms) + var(--i, 0) * 14ms);
+}
+@keyframes split-rise {
+  from {
+    transform: translateY(112%) rotate(5deg);
+    opacity: 0;
+    filter: blur(6px);
+  }
+  to {
+    transform: none;
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+/* Accent words slowly shimmer. */
+.shimmer {
+  background-size: 220% 100%;
+  animation: shimmer 5.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  50% {
+    background-position: 100% 0;
+  }
+}
+
+/* Scroll reveal: fade, lift and un-blur when the element arrives. Stagger a list with --i, delay a block with --d. */
+html.js:not(.rm) [data-reveal]:not([data-in]) {
+  opacity: 0;
+  transform: translate3d(0, 28px, 0) scale(0.985);
+  filter: blur(8px);
+}
+html.js:not(.rm) [data-reveal] {
+  transition:
+    opacity 0.8s ease calc(var(--d, 0ms) + var(--i, 0) * 70ms),
+    transform 1s var(--ease-expo) calc(var(--d, 0ms) + var(--i, 0) * 70ms),
+    filter 0.8s ease calc(var(--d, 0ms) + var(--i, 0) * 70ms);
+}
+
+/* Odometer: every digit is a strip 0 to 9 that slides to its value, on reveal and whenever the value changes. */
+.odo {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+  line-height: 1;
+  vertical-align: top;
+}
+.odo-col {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(var(--digit) * -1em));
+  transition: transform 0.9s var(--ease-expo) calc(var(--i, 0) * 90ms);
+}
+.odo-col > span {
+  display: block;
+  height: 1em;
+  line-height: 1;
+}
+html.js:not(.rm) [data-odo]:not([data-in]) .odo-col {
+  transform: translateY(0);
+}
+
+/* Scroll-scrubbed statement: each word lights up as the chapter progresses. ScrubWords writes the opacity. */
+html.js:not(.rm) .scrub-word {
+  opacity: 0.56;
+}
+/* Coloured words start brighter: a hue at 56% opacity on the navy background would fall below 4.5:1. */
+html.js:not(.rm) .scrub-name {
+  opacity: 0.8;
+}
+
+/* The trace under the statement draws left to right and its nodes light in turn. Finished by default; ScrubScene drives it. */
+.scrub-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.scrub-node {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+html.js:not(.rm) .scrub-draw {
+  stroke-dashoffset: 1;
+}
+html.js:not(.rm) .scrub-node {
+  opacity: 0.3;
+  transition:
+    opacity 400ms,
+    transform 500ms var(--ease-expo);
+}
+html.js:not(.rm) .scrub-node[data-lit] {
+  opacity: 1;
+  transform: scale(1.35);
+}
+
+/*
+ * Pinned scenes. The wrapper is tall; the stage inside it sticks while the wrapper scrolls past, which is how a scene
+ * is held on screen without any scroll-jacking. The story reads the wrapper's own geometry to get its progress.
+ * [data-pin="lg"] pins only on large, tall screens, where the whole stage fits; everywhere else it reads as a normal section.
+ * Needs html.js (without JavaScript nothing would move, so there is nothing to hold on screen) and no reduced-motion request.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html.js [data-pin]:not([data-pin="lg"]) {
+    height: var(--pin-height, 300vh);
+  }
+  html.js [data-pin]:not([data-pin="lg"]) > [data-pin-stage] {
+    position: sticky;
+    top: var(--pin-top, 0px);
+  }
+  html.js [data-pin] > [data-pin-stage][data-fill] {
+    height: 100svh;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (min-width: 64rem) and (min-height: 45rem) {
+  html.js [data-pin="lg"] {
+    height: var(--pin-height, 400vh);
+  }
+  html.js [data-pin="lg"] > [data-pin-stage] {
+    position: sticky;
+    top: var(--pin-top, 0px);
+  }
+}
+
+/* Smooth scroll (Lenis): its recommended base styles. */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Header: slides away while reading down the page and returns on the first scroll up (see NavVisibility). */
+.site-header {
+  transition: transform 500ms var(--ease-expo);
+}
+html[data-nav="hidden"] .site-header:not(:focus-within) {
+  transform: translateY(-130%);
+}
+
+/* Nav link: a gradient underline marks the chapter in view. */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -0.45rem;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--gradient-brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 450ms var(--ease-expo);
+}
+.nav-link[data-active]::after {
+  transform: scaleX(1);
+}
+.nav-link[data-active] {
+  color: var(--color-ink);
+}
+
 /* ------------------------------------------------------------------ reduced motion: everything still, nothing hidden */
 
 @media (prefers-reduced-motion: reduce) {
@@ -632,9 +792,5 @@ html[data-stage="overview"] canvas[data-ready="true"] {
   *::after {
     animation: none !important;
     transition: none !important;
-  }
-  .logo-hex,
-  .logo-check {
-    stroke-dashoffset: 0;
   }
 }

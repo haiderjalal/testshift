@@ -1,3 +1,4 @@
+import { SplitText } from "@/components/SplitText";
 import { PLANS, PLAN_IDS, type PlanId } from "@/lib/plans";
 
 import { CoverageMatrix, type CoverageRow } from "./CoverageMatrix";
@@ -90,12 +91,15 @@ export function Coverage() {
   }));
 
   return (
-    <section id="coverage" data-stage="overview" aria-labelledby="coverage-heading" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-28 sm:px-8">
-      <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">What a shift tests</p>
-      <h2 id="coverage-heading" className="reveal mt-4 max-w-3xl font-display text-4xl leading-[1.05] font-semibold tracking-[-0.03em] sm:text-5xl">
-        Functional, API, visual, performance and security, in one shift.
-      </h2>
-      <p className="reveal mt-5 max-w-2xl text-lg text-graphite">
+    <section id="coverage" data-chapter="coverage" aria-labelledby="coverage-heading" className="mx-auto max-w-7xl scroll-mt-20 px-5 py-28 sm:px-8">
+      <p data-reveal="" className="eyebrow">What a shift tests</p>
+      <SplitText
+        as="h2"
+        id="coverage-heading"
+        className="mt-4 max-w-3xl font-display text-4xl leading-[1.05] font-semibold tracking-[-0.03em] sm:text-5xl"
+        lines={[{ text: "Functional, API, visual, performance and security," }, { text: "in one shift.", accent: true }]}
+      />
+      <p data-reveal="" className="mt-5 max-w-2xl text-lg text-graphite">
         Every test runs on our test worker: a dedicated server with a real browser, guarded so it cannot reach private networks or wander off your site. Nothing is installed on your side. A one-hour and an eight-hour shift use the same tools; longer shifts go deeper and cover more.
       </p>
 

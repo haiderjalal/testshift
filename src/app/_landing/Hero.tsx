@@ -9,7 +9,7 @@ import { ShiftHud } from "./ShiftHud";
 
 export function Hero() {
   return (
-    <section data-stage="hero" className="relative flex min-h-[calc(100dvh-4rem)] items-center">
+    <section data-chapter="hero" className="relative flex min-h-[calc(100dvh-4rem)] items-center">
       <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-5 pt-14 pb-20 sm:px-8 lg:grid-cols-[1.1fr_1fr]">
         <div>
           <ul className="rise flex flex-wrap items-center gap-2 font-mono text-[11px] tracking-wider uppercase" aria-label="The four agents">
@@ -30,11 +30,14 @@ export function Hero() {
             <li className="pl-1 text-pass">online</li>
           </ul>
 
-          <h1 className="mt-7 font-display text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.04em] sm:text-6xl lg:text-[5.2rem]">
-            <SplitText text="Four AI agents." />
-            <br />
-            <SplitText text="One QA shift." color="var(--color-dev)" offset={16} />
-          </h1>
+          <SplitText
+            as="h1"
+            unit="chars"
+            trigger="load"
+            delay={120}
+            className="mt-7 font-display text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.04em] sm:text-7xl lg:text-[5.6rem]"
+            lines={[{ text: "Four AI agents." }, { text: "One QA shift.", accent: true }]}
+          />
 
           <p className="rise mt-7 max-w-xl text-lg leading-relaxed text-graphite" style={{ ["--d" as string]: 5 }}>
             Rent an AI QA team by the hour. Dev, Staging, UAT and Prod agents run{" "}

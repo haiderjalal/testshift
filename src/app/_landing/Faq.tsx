@@ -1,3 +1,5 @@
+import { SplitText } from "@/components/SplitText";
+
 const FAQS = [
   {
     q: "How do I pay during the beta?",
@@ -43,14 +45,17 @@ const FAQS = [
  */
 export function Faq() {
   return (
-    <section id="faq" data-stage="overview" aria-labelledby="faq-heading" className="mx-auto max-w-4xl scroll-mt-20 px-5 py-28 sm:px-8">
-      <p className="reveal font-mono text-xs tracking-widest text-graphite uppercase">FAQ</p>
-      <h2 id="faq-heading" className="reveal mt-4 font-display text-4xl font-semibold tracking-[-0.03em] sm:text-5xl">
-        Questions
-      </h2>
+    <section id="faq" data-chapter="faq" aria-labelledby="faq-heading" className="mx-auto max-w-4xl scroll-mt-20 px-5 py-28 sm:px-8">
+      <p data-reveal="" className="eyebrow">FAQ</p>
+      <SplitText
+        as="h2"
+        id="faq-heading"
+        className="mt-4 font-display text-4xl font-semibold tracking-[-0.03em] sm:text-5xl"
+        lines={[{ text: "Questions", accent: true }]}
+      />
       <div className="mt-10 space-y-3">
         {FAQS.map((f, i) => (
-          <details key={f.q} className="faq glass glass-strong reveal group rounded-2xl open:border-dev/40">
+          <details key={f.q} data-reveal="" style={{ ["--i" as string]: i }} className="faq glass glass-strong group rounded-2xl open:border-dev/40">
             <summary className="flex cursor-pointer list-none items-center gap-5 px-6 py-5 text-lg font-medium [&::-webkit-details-marker]:hidden">
               <span className="font-mono text-xs text-graphite tabular-nums">Q.{String(i + 1).padStart(2, "0")}</span>
               <span className="flex-1">{f.q}</span>
