@@ -113,10 +113,15 @@ test.describe("scroll story, motion on", () => {
     await expect(page.locator("html")).toHaveClass(/\bready\b/);
     const box = page.locator("textarea").first();
     await box.fill(Array.from({ length: 60 }, (_, line) => `Line ${line + 1}`).join("\n"));
+    // fill() leaves the caret at the end, which scrolls the box to its bottom. A wheel there is correctly passed on to
+    // the page, so start at the top to test scrolling the box itself.
+    await box.evaluate((node) => { node.scrollTop = 0; });
     expect(await box.evaluate((node) => node.scrollHeight > node.clientHeight), "the box overflows").toBe(true);
     await box.hover();
     await page.waitForTimeout(1500); // let the page finish easing to the box before measuring where it is
     const before = await page.evaluate(() => window.scrollY);
+    // The page can still move after the first hover, which would leave the pointer over something else; aim again.
+    await box.hover();
     await page.mouse.wheel(0, 150);
     await page.waitForTimeout(800);
     expect(await box.evaluate((node) => node.scrollTop), "the wheel scrolled the textarea").toBeGreaterThan(0);
