@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type postgres from "postgres";
-import { db, isUuid } from "../db";
+import { db, groupRows, isUuid } from "../db";
 import { githubId, repoName } from "./api";
 
 const baseEvent = z.object({ action: z.string().max(80).optional(), installation: z.object({ id: githubId }).optional() });
@@ -42,6 +42,35 @@ export async function recordWebhook(sql: postgres.Sql, delivery: string, event: 
     return "accepted";
   });
 }
+export interface JobSummary {
+  id: string;
+  connection_id: string;
+  workflow_run_id: string;
+  run_attempt: number;
+  head_sha: string;
+  status: string;
+  conclusion: string | null;
+  created_at: Date;
+}
+
+/**
+ * The newest jobs of every connection in a single query. The limit applies per connection inside a lateral
+ * subquery, so each connection reads only its own newest rows from the (connection_id, created_at) index.
+ */
+export async function recentJobsByConnection(connectionIds: readonly string[], limit: number): Promise<Map<string, JobSummary[]>> {
+  if (!connectionIds.length) return new Map();
+  const rows = await db()<JobSummary[]>`
+    select c.connection_id::text, j.id, j.workflow_run_id::text, j.run_attempt, j.head_sha, j.status, j.conclusion, j.created_at
+    from unnest(${connectionIds}::uuid[]) as c(connection_id)
+    cross join lateral (
+      select id, workflow_run_id, run_attempt, head_sha, status, conclusion, created_at
+      from github_jobs where connection_id = c.connection_id
+      order by created_at desc limit ${limit}
+    ) j
+    order by j.created_at desc`;
+  return groupRows(rows, (row) => row.connection_id);
+}
+
 export async function claimGitHubJob(sql = db()) {
   const rows = await sql`with candidate as (
     select j.id from github_jobs j join github_connections c on c.id = j.connection_id

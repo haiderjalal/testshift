@@ -5,7 +5,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import postgres from "postgres";
-import { claimGitHubJob, recordWebhook } from "../src/lib/github/store";
+import { claimGitHubJob, recentJobsByConnection, recordWebhook } from "../src/lib/github/store";
+import { recentGenerationsByConnection } from "../src/lib/github/generation-store";
 import { saveState, takeState } from "../src/lib/github/auth-store";
 import { opaque, digest } from "../src/lib/github/crypto";
 import { processGitHubJob } from "../worker/github";
@@ -111,4 +112,29 @@ test("broker recovers a check created before a transient response failure withou
     const second = (await sql`select * from github_jobs where id = ${first.id}`)[0]; assert.equal(second.status, "completed"); assert.equal(Number(second.check_id), 399);
     assert.equal(created, 1); assert.equal(patched, 1);
   } finally { globalThis.fetch = savedFetch; if (savedId === undefined) delete process.env.GITHUB_APP_ID; else process.env.GITHUB_APP_ID = savedId; if (savedKey === undefined) delete process.env.GITHUB_APP_PRIVATE_KEY; else process.env.GITHUB_APP_PRIVATE_KEY = savedKey; }
+});
+
+test("recent jobs and generations load in one query per table, newest first, with each connection's own limit", async () => {
+  const [other] = await sql`insert into github_connections (user_id,installation_id,repository_id,full_name) values (2,800001,900001,'other/checkout') returning id`;
+  for (let minute = 1; minute <= 12; minute++) {
+    await sql`insert into github_jobs (connection_id,workflow_run_id,run_attempt,head_sha,created_at)
+      values (${other.id},${500 + minute},1,${"b".repeat(40)},now() - make_interval(mins => ${minute}))`;
+  }
+  const jobs = await recentJobsByConnection([connection, other.id], 10);
+  for (const id of [connection, other.id]) {
+    const expected = await sql`select workflow_run_id::text from github_jobs where connection_id = ${id} order by created_at desc limit 10`;
+    assert.deepEqual((jobs.get(id) ?? []).map((job) => job.workflow_run_id), expected.map((row) => row.workflow_run_id));
+  }
+  assert.equal(jobs.get(other.id)?.length, 10);
+  assert.deepEqual(await recentJobsByConnection([], 10), new Map());
+
+  for (let minute = 1; minute <= 4; minute++) {
+    await sql`insert into github_generations (connection_id,status,consent_version,created_at)
+      values (${other.id},'review_ready','source-ai-pr-v1',now() - make_interval(mins => ${minute}))`;
+  }
+  const generations = await recentGenerationsByConnection([other.id, connection], 3);
+  const expectedGenerations = await sql`select id::text from github_generations where connection_id = ${other.id} order by created_at desc limit 3`;
+  assert.deepEqual((generations.get(other.id) ?? []).map((item) => item.id), expectedGenerations.map((row) => row.id));
+  assert.equal(generations.get(connection), undefined);
+  assert.equal((await recentGenerationsByConnection([], 3)).size, 0);
 });
