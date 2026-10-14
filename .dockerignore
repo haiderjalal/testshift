@@ -2,7 +2,6 @@
 .next
 node_modules
 .env*
-tests
 test-results
 playwright-report
 artifacts
