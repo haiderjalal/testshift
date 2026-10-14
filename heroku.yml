@@ -1,0 +1,14 @@
+# Heroku builds one image from the Dockerfile. The worker and documents process types run from that same image with
+# their own commands, so the image is built once.
+build:
+  docker:
+    web: Dockerfile
+
+run:
+  web: npm start
+  worker:
+    command: npm run worker
+    image: web
+  documents:
+    command: npm run documents:worker
+    image: web
