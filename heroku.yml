@@ -7,8 +7,10 @@ build:
 run:
   web: npm start
   worker:
-    command: npm run worker
+    command:
+      - npm run worker
     image: web
   documents:
-    command: npm run documents:worker
+    command:
+      - npm run documents:worker
     image: web
