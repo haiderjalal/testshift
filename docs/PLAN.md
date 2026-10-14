@@ -27,10 +27,10 @@ Every plan runs all four agents: Dev (unit tests), Staging (integration), UAT (e
 
 | Plan | Rate | Model | Adds |
 |---|---|---|---|
-| Junior QA | $30/h | Claude Sonnet 5.5, low effort | Core flows, desktop |
-| Senior QA | $50/h | Claude Opus 5.5, medium effort | Mobile, edge cases and bad inputs |
-| Lead QA | $100/h | Claude Opus 5.5, high effort | Accessibility and performance audits |
-| Principal QA | $150/h | Claude Fable 5.1 | Security-header review, priority queue |
+| Junior QA | $30/h | Claude Haiku 5.5, low effort | Core flows, desktop |
+| Senior QA | $50/h | Claude Haiku 5.5, medium effort | Mobile, edge cases and bad inputs |
+| Lead QA | $100/h | Claude Haiku 5.5, high effort | Accessibility and performance audits |
+| Principal QA | $150/h | Claude Haiku 5.5, medium effort | Security-header review, priority queue |
 | Custom | Quote | — | Request form; requests show in the admin dashboard |
 
 **Free trial:** every customer's first shift is 20 minutes, free, with no card needed. It is limited to one per email address and one per website (`www.` ignored), enforced by unique indexes in the database. The trial report ends with a "Book more hours" prompt that pre-fills the form.

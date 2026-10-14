@@ -13,7 +13,7 @@ import type { AiBudget } from "./budget";
 import { formatSiteMap } from "./browser";
 
 /** Scenario drafting is bulk work, so it runs on the cheapest model at its lowest effort. */
-export const DOCUMENT_MODEL: ModelId = "claude-sonnet-5-5";
+export const DOCUMENT_MODEL: ModelId = "claude-haiku-5-5";
 const OUTPUT_TOKENS = 4_000;
 const CALL_TIMEOUT_MS = 60_000;
 

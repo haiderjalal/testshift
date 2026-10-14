@@ -49,10 +49,10 @@ Every plan runs all four agents (`src/lib/plans.ts`).
 
 | Plan | Rate | Claude model | Effort | Adds |
 |---|---|---|---|---|
-| Junior QA | $30/h | Sonnet 5.5 | low | Core flows, desktop only |
-| Senior QA | $50/h | Opus 5.5 | medium | Mobile viewport, edge cases and bad inputs |
-| Lead QA | $100/h | Opus 5.5 | high | Accessibility audit (axe-core, WCAG 2 A/AA), performance audit (LCP and CLS) |
-| Principal QA | $150/h | Fable 5.1 | medium | Security-header review, priority queue (claimed first) |
+| Junior QA | $30/h | Haiku 5.5 | low | Core flows, desktop only |
+| Senior QA | $50/h | Haiku 5.5 | medium | Mobile viewport, edge cases and bad inputs |
+| Lead QA | $100/h | Haiku 5.5 | high | Accessibility audit (axe-core, WCAG 2 A/AA), performance audit (LCP and CLS) |
+| Principal QA | $150/h | Haiku 5.5 | medium | Security-header review, priority queue (claimed first) |
 | Custom | Quote | — | — | Request form at `/custom`; requests appear in `/admin` |
 
 - **Paid shifts:** 1, 2, 3, 4, 6 or 8 hours. Price = rate × hours, paid up front through Stripe Checkout.
@@ -63,9 +63,8 @@ Every plan runs all four agents (`src/lib/plans.ts`).
   - The trial report ends with "Book more hours".
 - **Booking form:** the free trial is selected by default. No plan is selected unless the link includes `?plan=`. Customers must confirm they own the site or may test it.
 - **Model prices** in USD per million tokens (input / output / cache read / cache write):
-  - Sonnet 5.5: 2 / 10 / 0.20 / 2.50
-  - Opus 5.5: 4 / 20 / 0.20 / 5
-  - Fable 5.1: 10 / 50 / 0.25 / 12.50
+  - Haiku 5.5 (prompts up to 100,000 tokens): 0.10 / 0.50 / 0.01 / 0.125. Longer prompts cost more and are not modelled yet.
+  - Sonnet 5.5, Opus 5.5 and Fable 5.1 stay priced so past usage keeps its cost.
 - **Starting cost estimates** (used by the token calculator until real shifts exist): about $4, $9, $14 and $28 per shift-hour for Junior, Senior, Lead and Principal. Real averages replace them per plan as shifts complete.
 - **Not built yet:** refunds for failed or early-ending shifts, and email verification.
 
@@ -127,7 +126,7 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 - **Cached context:** rules + site map + strategy are one prefix, cached with `cache_control` (a 1-hour TTL on shifts of an hour or more). Every planning call after the first re-reads it at the cache price.
 - **Compact site map:** it keeps only testable elements, and lists the header, nav and footer once instead of on every page.
 - **Script-first:** in the verification runs, 45 of 49 passes needed no model call.
-- **Low thinking for execution:** Sonnet 5.5 runs with `thinking: between_tools`; Opus 5.5 and Fable 5.1 run at effort `low`. The planner keeps the plan's effort, because test design is where quality comes from.
+- **Low thinking for execution:** Haiku 5.5 runs at effort `low` with its default adaptive thinking. The planner keeps the plan's effort, because test design is where quality comes from.
 - **Batched browser steps:** the investigator can send up to 8 steps per call.
 - Measured on the same 5-minute Junior shift on TodoMVC: **before**, 22 tests, 69 calls, $0.50; **after**, 53 tests, 29 calls, $0.31. That's 72% cheaper per test.
 
@@ -162,7 +161,7 @@ Customer ─▶ Next.js 16 web app (Vercel) ───▶ Postgres (Supabase)
 | Validation | Zod v4 |
 | Database | Supabase Postgres via `postgres` (postgres.js, `prepare: false` for the pooler) |
 | Browser automation | Playwright (Chromium), axe-core for accessibility |
-| AI | Claude API (`@anthropic-ai/sdk`): Sonnet 5.5, Opus 5.5, Fable 5.1 |
+| AI | Claude API (`@anthropic-ai/sdk`): Haiku 5.5 for every plan and background job |
 | Payments / email | Stripe Checkout / Resend (plain HTTP) |
 | Worker runtime | Node 24 + `tsx` |
 

@@ -16,10 +16,10 @@ test("repository source excludes hidden secrets, fixtures, build products and tr
 test("AI request is bounded and treats source as data; provider failures are not retried", async () => {
   const saved=globalThis.fetch,key=process.env.ANTHROPIC_API_KEY;process.env.ANTHROPIC_API_KEY='fixture-not-real';let calls=0,fail=false;
   globalThis.fetch=async(_input,init)=>{
-    calls++;const body=JSON.parse(String(init?.body));assert.equal(body.max_tokens,8192);assert.equal(body.model,'claude-sonnet-5-5');
+    calls++;const body=JSON.parse(String(init?.body));assert.equal(body.max_tokens,8192);assert.equal(body.model,'claude-haiku-5-5');
     assert.match(body.system,/UNTRUSTED DATA/);assert.equal(body.output_config.format.type,'json_schema');assert.ok(body.messages[0].content.includes('src/cart.ts'));
     if(fail)return Response.json({type:'error',error:{type:'overloaded_error',message:'Fixture provider failure'}},{status:529});
-    return Response.json({id:'msg_fixture',type:'message',role:'assistant',model:'claude-sonnet-5-5',stop_reason:'end_turn',stop_sequence:null,
+    return Response.json({id:'msg_fixture',type:'message',role:'assistant',model:'claude-haiku-5-5',stop_reason:'end_turn',stop_sequence:null,
       content:[{type:'text',text:JSON.stringify(proposal)}],usage:{input_tokens:100,output_tokens:500,cache_creation_input_tokens:0,cache_read_input_tokens:0}});
   };
   try{const result=await generateRepositorySuite(snapshot);assert.equal(result.suite.files.length,3);assert.ok(result.usage.cost>0);fail=true;await assert.rejects(generateRepositorySuite(snapshot));assert.equal(calls,2);}

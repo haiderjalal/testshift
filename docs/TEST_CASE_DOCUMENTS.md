@@ -20,7 +20,7 @@ Each source is labelled in the document, so a reader knows what kind of evidence
 |---|---|---|
 | **Crawl rule** | Read from each page's own structure, with no model involved | Opens and loads; tab title; one main heading; loads within 3 seconds; phone-sized screen; keyboard use; each link; each button; form fields |
 | **Accessibility scan** | An automated axe check against the WCAG 2.2 AA rules, one case per rule per page | "Images must have alternate text on /contact" |
-| **AI-drafted scenario** | Claude Sonnet 5.5 at low effort reads the crawled pages in batches of five and drafts end-to-end cases | "Pay with an expired card" |
+| **AI-drafted scenario** | Claude Haiku 5.5 at low effort reads the crawled pages in batches of five and drafts end-to-end cases | "Pay with an expired card" |
 
 Form fields get boundary and negative cases from the attributes the page declares: `required`, `type` (email, URL, number),
 `min` and `max` (just below, at, and just above each limit), `minlength`, `maxlength` and `pattern`. Disabled and read-only
