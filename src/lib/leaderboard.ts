@@ -1,4 +1,4 @@
-import { db, type Strategy } from "./db";
+import { db, groupRows, type Strategy } from "./db";
 import { assessResults, type ScoredCase } from "./qa";
 
 export interface LeaderboardEntry {
@@ -45,9 +45,11 @@ export async function loadLeaderboard(): Promise<LeaderboardEntry[]> {
     select run_id, agent, feature, status, priority, severity
     from test_cases where run_id = any(${runs.map((r) => r.id)}::uuid[])`;
 
+  // Group once. Filtering the full case list for each run would cost runs × cases on every leaderboard load.
+  const casesByRun = groupRows(cases, (c) => c.run_id);
   const entries: Unranked[] = [];
   for (const run of runs) {
-    const own = cases.filter((c) => c.run_id === run.id);
+    const own = casesByRun.get(run.id) ?? [];
     const { score } = assessResults(own, run.strategy);
     // A shift without completed checks has no score to compete with.
     if (score === null) continue;
