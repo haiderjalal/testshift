@@ -4,8 +4,13 @@ export const SITE = {
     "Rent a team of four AI QA agents by the hour. Dev, Staging, UAT and Prod agents run functional, API, visual, performance and security tests in a real browser and hand you the bug report.",
 };
 
-/** Claude models the tester can run on, with list prices in USD per million tokens (cache writes are 5-minute, 1.25× input). */
+/**
+ * Claude models with list prices in USD per million tokens (cache writes are 5-minute, 1.25× input). Haiku 5.5 is
+ * priced for prompts up to 100,000 tokens; longer prompts cost more ($0.50 input, $2.50 output), which tokenCost does
+ * not model. Older entries stay so past usage keeps its cost.
+ */
 export const MODELS = {
+  "claude-haiku-5-5": { label: "Claude Haiku 5.5", input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
   "claude-sonnet-5-5": { label: "Claude Sonnet 5.5", input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "claude-opus-5-5": { label: "Claude Opus 5.5", input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-fable-5-1": { label: "Claude Fable 5.1", input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
@@ -33,7 +38,7 @@ export const PLANS = {
   junior: {
     name: "Junior QA",
     rate: 30,
-    model: "claude-sonnet-5-5",
+    model: "claude-haiku-5-5",
     effort: "low",
     pitch: "All four agents on your core flows.",
     features: [
@@ -50,7 +55,7 @@ export const PLANS = {
   senior: {
     name: "Senior QA",
     rate: 50,
-    model: "claude-opus-5-5",
+    model: "claude-haiku-5-5",
     effort: "medium",
     pitch: "Edge cases, bad inputs and mobile.",
     features: [
@@ -67,7 +72,7 @@ export const PLANS = {
   lead: {
     name: "Lead QA",
     rate: 100,
-    model: "claude-opus-5-5",
+    model: "claude-haiku-5-5",
     effort: "high",
     pitch: "Adds accessibility and performance audits.",
     features: [
@@ -87,7 +92,7 @@ export const PLANS = {
   principal: {
     name: "Principal QA",
     rate: 150,
-    model: "claude-fable-5-1",
+    model: "claude-haiku-5-5",
     effort: "medium",
     pitch: "Our most capable agents on your release.",
     features: [

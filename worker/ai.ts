@@ -56,16 +56,6 @@ function base(run: Run) {
   };
 }
 
-/**
- * Clicking through a known test needs little reasoning. Sonnet 5.5 can drop thinking entirely
- * (`between_tools`); Opus 5.5 and Fable 5.1 always think, so they run at their lowest effort.
- */
-function lowThinking(run: Run): Pick<Anthropic.Beta.MessageCreateParams, "thinking" | "output_config"> {
-  return PLANS[run.plan].model === "claude-sonnet-5-5"
-    ? { thinking: { type: "between_tools" }, output_config: { effort: "low" } }
-    : { output_config: { effort: "low" } };
-}
-
 /** Saves one response's token usage and cost for the admin dashboard. Never throws: tracking must not stop a shift. */
 async function recordUsage(
   run: Run,
@@ -725,7 +715,8 @@ ${await describePage(page, initialEvents)}`,
     if (messages.length > 7) messages.splice(1, messages.length - 7);
     const input = {
       ...base(run),
-      ...lowThinking(run),
+      // Clicking through a known test needs little reasoning, so the investigator runs at the lowest effort.
+      output_config: { effort: "low" },
       max_tokens: 2_000,
       cache_control: { type: "ephemeral" },
       system: INVESTIGATOR_SYSTEM,

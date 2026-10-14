@@ -59,7 +59,7 @@ async function main() {
       results.push({ title: draft.title, expected: draft.expected, script: draft.script,
         status: result?.status ?? "not_reached", actual: result?.actual, scripted: result?.scripted, failedAssertion: result?.failedAssertion });
     }
-    const report = { generatedAt: new Date().toISOString(), model: "claude-sonnet-5-5", spendingLimit: budget.limit,
+    const report = { generatedAt: new Date().toISOString(), model: "claude-haiku-5-5", spendingLimit: budget.limit,
       measuredCost: budget.spent, calls: usage.length, usage, strategy, results,
       limitations: "One small synthetic site and one live model sample; not a recall benchmark or production cost estimate. All browser traffic was locally fulfilled." };
     await mkdir("artifacts/qa", { recursive: true });

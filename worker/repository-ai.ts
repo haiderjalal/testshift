@@ -12,12 +12,12 @@ Use Vitest imports from 'vitest' for unit/integration tests and Playwright impor
   const content = JSON.stringify({ stack: source.stack, commit: source.sha, inventory: source.inventory, files: source.files });
   // Worst-case one UTF-8 byte per input token, including JSON/schema overhead. $1 reservation per job.
   if (Buffer.byteLength(content + system + JSON.stringify(generatedSuiteSchema.toJSONSchema())) > 210000) throw new GenerationError("generation-input-budget");
-  const response = await client.messages.create({ model: "claude-sonnet-5-5", max_tokens: 8192,
+  const response = await client.messages.create({ model: "claude-haiku-5-5", max_tokens: 8192,
     system, output_config: { format: zodOutputFormat(generatedSuiteSchema) }, messages: [{ role: "user", content }] });
   if (response.stop_reason !== "end_turn") throw new GenerationError("generation-output-incomplete");
   const text = response.content.filter((block) => block.type === "text").map((block) => block.text).join("");
   const suite = validateGeneratedSuite(JSON.parse(text), source);
   const input = response.usage.input_tokens, output = response.usage.output_tokens;
-  const cost = tokenCost("claude-sonnet-5-5", { input, output, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 });
+  const cost = tokenCost("claude-haiku-5-5", { input, output, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 });
   return { suite, usage: { input, output, cost } };
 }

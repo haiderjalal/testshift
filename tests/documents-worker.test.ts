@@ -65,7 +65,7 @@ const scenarioReply = () => ({
   id: "msg_documents",
   type: "message",
   role: "assistant",
-  model: "claude-sonnet-5-5",
+  model: "claude-haiku-5-5",
   content: [
     {
       type: "text",
@@ -180,7 +180,7 @@ test("a queued request becomes a document: cases, a PDF and a Word file, one sce
     select purpose, model, sum(cost_usd)::float8 as cost, count(*)::int as calls from ai_usage
     where document_id = ${id} group by purpose, model`;
   assert.equal(usage.purpose, "document", "document spend is attributed to documents, not to a run");
-  assert.equal(usage.model, "claude-sonnet-5-5");
+  assert.equal(usage.model, "claude-haiku-5-5");
   assert.equal(usage.calls, 1);
   assert.ok(usage.cost > 0);
 });
