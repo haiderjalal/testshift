@@ -2,7 +2,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, generateKeyPairSync, verify } from "node:crypto";
 import { appJwt, digest, opaque, openToken, pkceChallenge, sealToken, validSignature } from "../src/lib/github/crypto";
-import { authorizedRepository, github, GitHubError, withInstallation, repositoryWorkflows, activeRepositoryWorkflow } from "../src/lib/github/api";
+import { authorizedRepositories, authorizedRepository, github, GitHubError, userInstallations, withInstallation, repositoryWorkflows, activeRepositoryWorkflow } from "../src/lib/github/api";
 import { customerConfig, customerWorkflow } from "../src/lib/github/workflow";
 import { sourceZip } from "../src/lib/github/zip";
 import { reportMarkdown, verifiedReport } from "../worker/github";
@@ -54,6 +54,41 @@ test("repository connection needs both selected-installation access and current 
   await assert.rejects(authorizedRepository("fixture-token", 5, 8, "owner"), GitHubError);
   await assert.rejects(authorizedRepository("fixture-token", 5, 7, "owner"), GitHubError);
   permission = "admin"; assert.equal((await authorizedRepository("fixture-token", 5, 7, "owner")).id, 7);
+});
+test("saved connections are re-checked with one listing per installation, and a failure denies only its own connections", async () => {
+  const requests: string[] = [];
+  let sharedPermission = "read"; let installationFiveFails = false;
+  // A full first page that already holds both wanted repositories: the listing must stop there, not walk every page.
+  const fullFirstPage = [{ id: 7, full_name: "owner/project" }, { id: 8, full_name: "owner/other" }, ...Array.from({ length: 98 }, (_, index) => ({ id: 1000 + index, full_name: `owner/extra-${index}` }))];
+  globalThis.fetch = async (url) => {
+    const path = new URL(String(url)).pathname;
+    requests.push(path);
+    if (path === "/user/installations") return Response.json({ installations: [
+      { id: 5, app_id: 123, suspended_at: null, account: { login: "owner" } },
+      { id: 6, app_id: 123, suspended_at: null, account: { login: "team" } },
+    ] });
+    if (path === "/user/installations/5/repositories") return installationFiveFails
+      ? Response.json({}, { status: 500 })
+      : Response.json({ repositories: fullFirstPage });
+    if (path === "/user/installations/6/repositories") return Response.json({ repositories: [{ id: 9, full_name: "team/shared" }] });
+    if (path === "/repos/team/shared/collaborators/owner/permission") return Response.json({ permission: sharedPermission });
+    if (path.endsWith("/permission")) return Response.json({ permission: "admin" });
+    return Response.json({}, { status: 404 });
+  };
+  const installations = await userInstallations("fixture-token");
+  const grants = [
+    { installationId: 5, repositoryId: 7 },
+    { installationId: 5, repositoryId: 8 },
+    { installationId: 6, repositoryId: 9 },
+    { installationId: 4, repositoryId: 7 },
+  ];
+  // Read-only access on team/shared and an installation the user cannot see are both denied.
+  assert.deepEqual(await authorizedRepositories("fixture-token", "owner", grants, installations), [true, true, false, false]);
+  assert.equal(requests.filter((path) => path === "/user/installations/5/repositories").length, 1);
+
+  sharedPermission = "admin"; installationFiveFails = true; requests.length = 0;
+  assert.deepEqual(await authorizedRepositories("fixture-token", "owner", grants, installations), [false, false, true, false]);
+  assert.equal(requests.filter((path) => path === "/user/installations").length, 0);
 });
 test("workflow discovery paginates, hides disabled or unsupported paths, and returns only names and IDs", async () => {
   const workflow = { id: 50, name: "Quality checks", path: ".github/workflows/quality-checks.yml", state: "active" };

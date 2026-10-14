@@ -70,12 +70,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-/** The verification record for a host, created on first use. Safe to call repeatedly. */
+/**
+ * The verification record for a host, created on first use. Safe to call repeatedly. Reads come first, so a page view
+ * writes nothing once the record exists.
+ */
 export async function getOrCreateVerification(host: string): Promise<SiteVerification> {
-  const [row] = await db()<SiteVerification[]>`
-    insert into site_verifications (host, token) values (${host}, ${newVerificationToken()})
-    on conflict (host) do update set host = excluded.host
-    returning host, token, verified_at, verified_method`;
+  const existing = await findVerification(host);
+  if (existing) return existing;
+  await db()`insert into site_verifications (host, token) values (${host}, ${newVerificationToken()}) on conflict (host) do nothing`;
+  const created = await findVerification(host);
+  if (!created) throw new Error("Site verification record was not created");
+  return created;
+}
+
+async function findVerification(host: string): Promise<SiteVerification | undefined> {
+  const [row] = await db()<SiteVerification[]>`select host, token, verified_at, verified_method from site_verifications where host = ${host}`;
   return row;
 }
 

@@ -7,7 +7,7 @@ import { emailConfigured } from "@/lib/email";
 import { emailKey } from "@/lib/net";
 import { formatDuration, PLANS } from "@/lib/plans";
 
-import { isSiteVerified, getOrCreateVerification, dnsRecordName, dnsRecordValue, VERIFICATION_DAYS, VERIFICATION_FILE_PATH } from "@/lib/ownership";
+import { isSiteVerified, getOrCreateVerification, dnsRecordName, dnsRecordValue, VERIFICATION_DAYS, VERIFICATION_FILE_PATH, type SiteVerification } from "@/lib/ownership";
 import { ApiChecks, type ApiCheckRow } from "./ApiChecks";
 import { OwnershipPanel } from "./OwnershipPanel";
 import { VisualSnapshots, type VisualSnapshotRow } from "./VisualSnapshots";
@@ -22,6 +22,12 @@ export const metadata: Metadata = {
 };
 
 type RunView = Run & { elapsed_ms: number | null; stripe_session_id: string | null };
+
+/** The ownership panel needs both the verification record and whether this customer has proven it recently. */
+async function loadOwnership(host: string, email: string): Promise<{ record: SiteVerification; fresh: boolean }> {
+  const [record, fresh] = await Promise.all([getOrCreateVerification(host), isSiteVerified(host, emailKey(email))]);
+  return { record, fresh };
+}
 
 async function getRun(id: string): Promise<RunView | undefined> {
   // Elapsed time comes from the database clock, the same one that set the deadline.
@@ -40,23 +46,25 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
   const run = await getRun(id);
   if (!run) notFound();
 
-  const cases = await db()<TestCase[]>`
-    select id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
-      actions, screenshot is not null as has_screenshot, finished_at, requirement
-    from test_cases where run_id = ${id} order by seq`;
-  const apiChecks = run.status === "completed"
-    ? await db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, latency_p95_ms, chained_from, skipped_reason, passed, severity, checks
-        from api_checks where run_id = ${id} order by created_at, id`
-    : [];
+  const completed = run.status === "completed";
   const ownershipHost = new URL(run.url).hostname;
-  const ownership = run.status === "completed"
-    ? { record: await getOrCreateVerification(ownershipHost), fresh: await isSiteVerified(ownershipHost, emailKey(run.email)) }
-    : null;
-  const visualRows = run.status === "completed"
-    ? await db()<VisualSnapshotRow[]>`select id, path, viewport, status, changed_ratio, width, height,
-        baseline_key is not null as has_baseline, diff_key is not null as has_diff
-        from visual_snapshots where run_id = ${id} order by created_at, id`
-    : [];
+  // These reads do not depend on each other, so they run together instead of one round trip after another.
+  const [cases, apiChecks, ownership, visualRows] = await Promise.all([
+    db()<TestCase[]>`
+      select id, seq, agent, feature, title, category, priority, viewport, start_url, steps, expected, status, actual, severity,
+        actions, screenshot is not null as has_screenshot, finished_at, requirement
+      from test_cases where run_id = ${id} order by seq`,
+    completed
+      ? db()<ApiCheckRow[]>`select id, method, path, status_code, latency_ms, latency_p95_ms, chained_from, skipped_reason, passed, severity, checks
+          from api_checks where run_id = ${id} order by created_at, id`
+      : [],
+    completed ? loadOwnership(ownershipHost, run.email) : null,
+    completed
+      ? db()<VisualSnapshotRow[]>`select id, path, viewport, status, changed_ratio, width, height,
+          baseline_key is not null as has_baseline, diff_key is not null as has_diff
+          from visual_snapshots where run_id = ${id} order by created_at, id`
+      : [],
+  ]);
   const plan = PLANS[run.plan];
 
   return (

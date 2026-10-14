@@ -32,6 +32,18 @@ export function json(value: object): postgres.Parameter {
   return db().json(value as postgres.JSONValue);
 }
 
+/** Splits one batched query's rows back into per-parent groups, keeping each group in query order. */
+export function groupRows<T>(rows: readonly T[], keyOf: (row: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  return groups;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID.test(value);
 

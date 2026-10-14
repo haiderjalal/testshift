@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import { db } from "../db";
+import { db, groupRows } from "../db";
 
 export function generationEnabled() {
   return process.env.GITHUB_GENERATION_ENABLED === "1";
@@ -21,6 +21,32 @@ export async function enqueueGeneration(sql: postgres.TransactionSql, connection
   await sql`update github_generation_daily set requests = requests + 1 where day = current_date`;
   return job.id as string;
 }
+export interface GenerationSummary {
+  id: string;
+  connection_id: string;
+  status: string;
+  stage: string;
+  pull_number: string | null;
+  failure_code: string | null;
+  inventory: { totalFiles: number; analyzedFiles: number } | null;
+  created_at: Date;
+}
+
+/** The newest generations of every connection in a single query; see recentJobsByConnection for the access pattern. */
+export async function recentGenerationsByConnection(connectionIds: readonly string[], limit: number): Promise<Map<string, GenerationSummary[]>> {
+  if (!connectionIds.length) return new Map();
+  const rows = await db()<GenerationSummary[]>`
+    select c.connection_id::text, g.id, g.status, g.stage, g.pull_number::text, g.failure_code, g.inventory, g.created_at
+    from unnest(${connectionIds}::uuid[]) as c(connection_id)
+    cross join lateral (
+      select id, status, stage, pull_number, failure_code, inventory, created_at
+      from github_generations where connection_id = c.connection_id
+      order by created_at desc limit ${limit}
+    ) g
+    order by g.created_at desc`;
+  return groupRows(rows, (row) => row.connection_id);
+}
+
 export async function claimGeneration(sql = db()) {
   // A crashed model request is never repeated automatically: its cost/result is uncertain.
   await sql`update github_generations set status = 'failed', failure_code = 'generation-interrupted', completed_at = now(), lease_id = null, lease_until = null

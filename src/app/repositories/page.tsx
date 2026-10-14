@@ -3,9 +3,11 @@ import Link from "next/link";
 import { PageIntro } from "@/components/PageIntro";
 import { SiteHeader } from "@/components/SiteHeader";
 import { db } from "@/lib/db";
-import { authorizedRepository, githubConfigured, userInstallations } from "@/lib/github/api";
+import { authorizedRepositories, githubConfigured, userInstallations } from "@/lib/github/api";
 import { customerSession, customerToken } from "@/lib/github/session";
-import { generationEnabled } from "@/lib/github/generation-store";
+import { generationEnabled, recentGenerationsByConnection, type GenerationSummary } from "@/lib/github/generation-store";
+import { recentJobsByConnection } from "@/lib/github/store";
+import { log } from "@/lib/log";
 import { ConnectForm } from "./ConnectForm";
 import { ConnectSteps } from "./ConnectSteps";
 import { StatusPill, toneForStatus } from "./StatusPill";
@@ -18,26 +20,37 @@ const notices: Record<string, string> = {
   "access-denied": "GitHub did not confirm installation access.", "sign-in": "Sign in with GitHub first.", "rate-limit": "Please wait before starting another GitHub request.",
 };
 interface Connection { id: string; installation_id: string; repository_id: string; full_name: string; workflow_path: string; active: boolean }
+const MAX_CONNECTIONS = 20;
+const JOBS_PER_CONNECTION = 10;
+const GENERATIONS_PER_CONNECTION = 3;
 export default async function RepositoriesPage({ searchParams }: PageProps<"/repositories">) {
   const notice = (await searchParams).notice;
   const configured = githubConfigured();
   const generation = generationEnabled();
   const customer = configured ? await customerSession() : null;
-  let installations: { id: number; account: string }[] = []; const connections: Connection[] = []; let unavailable = false;
+  let installations: { id: number; account: string }[] = []; let connections: Connection[] = []; let unavailable = false;
   if (customer) {
     try {
       const token = customerToken(customer);
-      installations = (await userInstallations(token)).map((item) => ({ id: item.id, account: item.account.login }));
-      const candidates = await db()<Connection[]>`select id,installation_id::text,repository_id::text,full_name,workflow_path,active from github_connections where user_id = ${customer.user_id} order by created_at desc limit 20`;
+      const installationList = await userInstallations(token);
+      installations = installationList.map((item) => ({ id: item.id, account: item.account.login }));
+      const candidates = await db()<Connection[]>`select id,installation_id::text,repository_id::text,full_name,workflow_path,active from github_connections where user_id = ${customer.user_id} order by created_at desc limit ${MAX_CONNECTIONS}`;
       // Re-check current GitHub authority before showing private metadata/reports.
-      for (const connection of candidates) {
-        try {
-          await authorizedRepository(token, Number(connection.installation_id), Number(connection.repository_id), customer.login);
-          connections.push(connection);
-        } catch { unavailable = true; }
-      }
+      const granted = await authorizedRepositories(token, customer.login, candidates.map((connection) => ({
+        installationId: Number(connection.installation_id), repositoryId: Number(connection.repository_id),
+      })), installationList);
+      connections = candidates.filter((_, index) => granted[index]);
+      unavailable = granted.includes(false);
     } catch { unavailable = true; }
   }
+  const connectionIds = connections.map((connection) => connection.id);
+  const [jobsByConnection, generationsByConnection] = await Promise.all([
+    recentJobsByConnection(connectionIds, JOBS_PER_CONNECTION),
+    generation ? recentGenerationsByConnection(connectionIds, GENERATIONS_PER_CONNECTION).catch(() => {
+      log("error", "Repository generation status unavailable");
+      return null;
+    }) : new Map<string, GenerationSummary[]>(),
+  ]);
   return <><SiteHeader /><main className="mx-auto w-full max-w-4xl flex-1 px-5 py-12 sm:px-8">
     <PageIntro eyebrow="Repository testing" title="Your GitHub repositories" description="Connect repositories you administer. GitHub Actions runs your approved tests; TestShift collects verified CI results and publishes a check on the tested commit." />
 
@@ -71,17 +84,16 @@ export default async function RepositoriesPage({ searchParams }: PageProps<"/rep
             <section className="mt-10 space-y-5">
               <h2 className="font-display text-2xl">Connected repositories</h2>
               {!connections.length && <p className="text-graphite">No verified repositories connected yet.</p>}
-              {await Promise.all(connections.map(async (connection) => {
-                const jobs = await db()`select id,workflow_run_id::text,run_attempt,head_sha,status,conclusion,created_at from github_jobs where connection_id = ${connection.id} order by created_at desc limit 10`;
-                const generationResult = generation ? await db()`select id,status,stage,pull_number::text,failure_code,inventory from github_generations where connection_id = ${connection.id} order by created_at desc limit 3`.catch(()=>null) : [];
-                const generations = generationResult ?? [];
+              {connections.map((connection) => {
+                const jobs = jobsByConnection.get(connection.id) ?? [];
+                const generations = generationsByConnection?.get(connection.id) ?? [];
                 return <article key={connection.id} className="glass glass-strong rounded-3xl p-6 sm:p-7">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <h3 className="min-w-0 break-words font-display text-xl">{connection.full_name}</h3>
                     <StatusPill tone={connection.active ? "pass" : "attention"}>{connection.active ? "Connected" : "Paused — reconnect to resume"}</StatusPill>
                   </div>
                   <p className="mt-2 break-all text-sm text-graphite"><code>{connection.workflow_path}</code></p>
-                  {generationResult === null && <p role="alert" className="mt-5 rounded-2xl border border-fail/50 bg-fail/10 p-4 text-sm">Test generation is unavailable. The owner should check the generation migration and worker setup. Existing CI reports remain available below.</p>}
+                  {generationsByConnection === null && <p role="alert" className="mt-5 rounded-2xl border border-fail/50 bg-fail/10 p-4 text-sm">Test generation is unavailable. The owner should check the generation migration and worker setup. Existing CI reports remain available below.</p>}
                   {generations.map((item) => <div key={item.id} className="mt-5 space-y-2 rounded-2xl border border-rule bg-raised/40 p-4 text-sm">
                     <p className="font-medium">Test generation: {item.status} · {item.stage}</p>
                     {item.inventory && <p className="text-graphite">Analyzed {item.inventory.analyzedFiles} of {item.inventory.totalFiles} files. See the PR for scope and coverage gaps.</p>}
@@ -96,7 +108,7 @@ export default async function RepositoriesPage({ searchParams }: PageProps<"/rep
                   {!jobs.length && <p className="mt-5 text-sm text-graphite">Waiting for a new completed run of your selected workflow. Start it in GitHub Actions, or push a commit if it runs on pushes.</p>}
                   <form action={disconnectRepository} className="mt-6 border-t border-rule pt-5"><input type="hidden" name="id" value={connection.id} /><button className="min-h-11 text-sm text-fail underline underline-offset-4">Disconnect and delete TestShift reports</button></form>
                 </article>;
-              }))}
+              })}
             </section>
           </>}
       </>}
